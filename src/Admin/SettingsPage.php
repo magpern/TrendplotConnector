@@ -1,0 +1,182 @@
+<?php
+declare(strict_types=1);
+
+namespace TrendplotConnector\Admin;
+
+use TrendplotConnector\Meta\MetaStore;
+
+class SettingsPage
+{
+    private const OPTION_NAME = 'trendplot_connector_settings';
+    private const PAGE_SLUG   = 'trendplot-connector';
+
+    public static function register_menu(): void
+    {
+        add_options_page(
+            'Trendplot Connector',
+            'Trendplot Connector',
+            'manage_options',
+            self::PAGE_SLUG,
+            [self::class, 'render_page']
+        );
+    }
+
+    public static function register_settings(): void
+    {
+        register_setting(
+            'trendplot_connector_options',
+            self::OPTION_NAME,
+            ['sanitize_callback' => [self::class, 'sanitize_settings']]
+        );
+
+        add_settings_section(
+            'trendplot_main',
+            'API Settings',
+            null,
+            self::PAGE_SLUG
+        );
+
+        add_settings_field(
+            'enabled',
+            'Enable Connector',
+            [self::class, 'field_enabled'],
+            self::PAGE_SLUG,
+            'trendplot_main'
+        );
+        add_settings_field(
+            'site_id',
+            'Site ID',
+            [self::class, 'field_site_id'],
+            self::PAGE_SLUG,
+            'trendplot_main'
+        );
+        add_settings_field(
+            'shared_secret',
+            'Shared Secret',
+            [self::class, 'field_shared_secret'],
+            self::PAGE_SLUG,
+            'trendplot_main'
+        );
+        add_settings_field(
+            'allowed_origin',
+            'Allowed Origin',
+            [self::class, 'field_allowed_origin'],
+            self::PAGE_SLUG,
+            'trendplot_main'
+        );
+    }
+
+    public static function handle_generate_secret(): void
+    {
+        if (!isset($_POST['trendplot_action']) || $_POST['trendplot_action'] !== 'generate_secret') {
+            return;
+        }
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        check_admin_referer('trendplot_generate_secret_nonce');
+
+        $settings = get_option(self::OPTION_NAME, []);
+        $settings['shared_secret'] = wp_generate_password(64, false);
+        update_option(self::OPTION_NAME, $settings);
+
+        wp_redirect(admin_url('options-general.php?page=' . self::PAGE_SLUG . '&secret_generated=1'));
+        exit;
+    }
+
+    public static function sanitize_settings(mixed $input): array
+    {
+        if (!is_array($input)) {
+            return [];
+        }
+        $existing = get_option(self::OPTION_NAME, []);
+        $clean    = [];
+
+        $clean['enabled']        = !empty($input['enabled']) ? '1' : '0';
+        $clean['site_id']        = sanitize_text_field($input['site_id'] ?? '');
+        $clean['allowed_origin'] = esc_url_raw($input['allowed_origin'] ?? '');
+
+        $submitted_secret = $input['shared_secret'] ?? '';
+        $clean['shared_secret'] = $submitted_secret !== ''
+            ? sanitize_text_field($submitted_secret)
+            : ($existing['shared_secret'] ?? '');
+
+        return $clean;
+    }
+
+    public static function render_page(): void
+    {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        $settings     = get_option(self::OPTION_NAME, []);
+        $draft_count  = MetaStore::count_trendplot_posts();
+        $health_url   = esc_url(rest_url('trendplot/v1/health'));
+        ?>
+        <div class="wrap">
+            <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
+
+            <?php if (isset($_GET['secret_generated'])) : ?>
+                <div class="notice notice-success"><p>New shared secret generated and saved.</p></div>
+            <?php endif; ?>
+
+            <p>Trendplot-managed posts: <strong><?php echo esc_html((string) $draft_count); ?></strong></p>
+
+            <form method="post" action="options.php">
+                <?php
+                settings_fields('trendplot_connector_options');
+                do_settings_sections(self::PAGE_SLUG);
+                submit_button('Save Settings');
+                ?>
+            </form>
+
+            <hr>
+            <h2>Generate Secret</h2>
+            <p>Creates a new cryptographically random 64-character shared secret and saves it immediately.</p>
+            <form method="post" action="">
+                <?php wp_nonce_field('trendplot_generate_secret_nonce'); ?>
+                <input type="hidden" name="trendplot_action" value="generate_secret" />
+                <?php submit_button('Generate New Secret', 'secondary', 'submit', false); ?>
+            </form>
+
+            <hr>
+            <h2>Test Connection</h2>
+            <a href="<?php echo $health_url; ?>" target="_blank" class="button">
+                Open /health endpoint
+            </a>
+        </div>
+        <?php
+    }
+
+    public static function field_enabled(): void
+    {
+        $settings = get_option(self::OPTION_NAME, []);
+        $checked  = !empty($settings['enabled']) ? 'checked' : '';
+        echo '<input type="checkbox" name="' . esc_attr(self::OPTION_NAME) . '[enabled]" value="1" ' . $checked . ' />';
+        echo '<label> Enable the Trendplot REST API</label>';
+    }
+
+    public static function field_site_id(): void
+    {
+        $settings = get_option(self::OPTION_NAME, []);
+        $value    = esc_attr($settings['site_id'] ?? '');
+        echo '<input type="text" name="' . esc_attr(self::OPTION_NAME) . '[site_id]" value="' . $value . '" class="regular-text" />';
+        echo '<p class="description">Unique identifier for this site, must match what Trendplot sends in X-Trendplot-Site-Id.</p>';
+    }
+
+    public static function field_shared_secret(): void
+    {
+        $settings = get_option(self::OPTION_NAME, []);
+        $value    = esc_attr($settings['shared_secret'] ?? '');
+        echo '<input type="password" name="' . esc_attr(self::OPTION_NAME) . '[shared_secret]" value="' . $value . '" class="regular-text" autocomplete="new-password" />';
+        echo '<p class="description">HMAC-SHA256 signing secret. Use the Generate button below or enter manually.</p>';
+    }
+
+    public static function field_allowed_origin(): void
+    {
+        $settings = get_option(self::OPTION_NAME, []);
+        $value    = esc_attr($settings['allowed_origin'] ?? '');
+        echo '<input type="url" name="' . esc_attr(self::OPTION_NAME) . '[allowed_origin]" value="' . $value . '" class="regular-text" placeholder="https://app.trendplot.io" />';
+        echo '<p class="description">Base URL of the Trendplot service. Reserved for future CORS enforcement.</p>';
+    }
+}
