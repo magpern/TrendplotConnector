@@ -77,8 +77,10 @@ class SettingsPage
         check_admin_referer('trendplot_generate_secret_nonce');
 
         $settings = get_option(self::OPTION_NAME, []);
-        $settings['shared_secret'] = wp_generate_password(64, false);
+        $new_secret = wp_generate_password(64, false);
+        $settings['shared_secret'] = $new_secret;
         update_option(self::OPTION_NAME, $settings);
+        set_transient('trendplot_new_secret_' . get_current_user_id(), $new_secret, 300);
 
         wp_redirect(admin_url('options-general.php?page=' . self::PAGE_SLUG . '&secret_generated=1'));
         exit;
@@ -116,7 +118,38 @@ class SettingsPage
         <div class="wrap">
             <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
 
-            <?php if (isset($_GET['secret_generated'])) : ?>
+            <?php
+            $reveal_secret = false;
+            if (isset($_GET['secret_generated'])) {
+                $transient_key = 'trendplot_new_secret_' . get_current_user_id();
+                $reveal_secret = get_transient($transient_key);
+                if ($reveal_secret) {
+                    delete_transient($transient_key);
+                }
+            }
+            ?>
+            <?php if ($reveal_secret) : ?>
+                <div class="notice notice-warning" style="padding: 12px 16px 16px;">
+                    <p><strong>New secret generated.</strong> Copy it now — this is the only time it will be shown.</p>
+                    <div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+                        <input type="text"
+                               id="trendplot-reveal-secret"
+                               value="<?php echo esc_attr($reveal_secret); ?>"
+                               readonly
+                               style="width:520px;font-family:monospace;font-size:13px;" />
+                        <button type="button"
+                                class="button"
+                                onclick="
+                                    var el = document.getElementById('trendplot-reveal-secret');
+                                    el.select();
+                                    navigator.clipboard.writeText(el.value).then(function() {
+                                        this.textContent = 'Copied!';
+                                        setTimeout(function(btn) { btn.textContent = 'Copy'; }, 2000, this);
+                                    }.bind(this));
+                                ">Copy</button>
+                    </div>
+                </div>
+            <?php elseif (isset($_GET['secret_generated'])) : ?>
                 <div class="notice notice-success"><p>New shared secret generated and saved.</p></div>
             <?php endif; ?>
 
