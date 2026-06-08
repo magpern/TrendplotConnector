@@ -80,6 +80,13 @@ class SettingsPage
             'trendplot_related_articles'
         );
         add_settings_field(
+            'related_articles_title',
+            'Block Title',
+            [self::class, 'field_related_articles_title'],
+            self::PAGE_SLUG,
+            'trendplot_related_articles'
+        );
+        add_settings_field(
             'related_articles_limit',
             'Maximum Articles',
             [self::class, 'field_related_articles_limit'],
@@ -133,6 +140,7 @@ class SettingsPage
             : ($existing['shared_secret'] ?? '');
 
         $clean['related_articles_enabled']   = !empty($input['related_articles_enabled']) ? '1' : '0';
+        $clean['related_articles_title']     = sanitize_text_field($input['related_articles_title'] ?? '');
         $limit = (int) ($input['related_articles_limit'] ?? 5);
         $clean['related_articles_limit']     = (string) max(1, min(20, $limit));
         $allowed_placements = ['after_short_description', 'after_meta', 'after_tabs'];
@@ -262,6 +270,14 @@ class SettingsPage
         $checked  = ($settings['related_articles_enabled'] ?? '1') === '1' ? 'checked' : '';
         echo '<input type="checkbox" name="' . esc_attr(self::OPTION_NAME) . '[related_articles_enabled]" value="1" ' . $checked . ' />';
         echo '<label> Show Related Research Articles block on product pages</label>';
+    }
+
+    public static function field_related_articles_title(): void
+    {
+        $settings = get_option(self::OPTION_NAME, []);
+        $value    = esc_attr($settings['related_articles_title'] ?? '');
+        echo '<input type="text" name="' . esc_attr(self::OPTION_NAME) . '[related_articles_title]" value="' . $value . '" class="regular-text" placeholder="Related Research Articles" />';
+        echo '<p class="description">Heading shown above the article list. Leave blank to use the default.</p>';
     }
 
     public static function field_related_articles_limit(): void

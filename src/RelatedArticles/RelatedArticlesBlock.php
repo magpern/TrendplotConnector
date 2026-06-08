@@ -60,10 +60,12 @@ class RelatedArticlesBlock
             return;
         }
 
-        $title = (string) apply_filters(
-            'trendplot_related_articles_title',
-            __('Related Research Articles', 'trendplot-connector')
-        );
+        $settings       = get_option('trendplot_connector_settings', []);
+        $settings_title = trim($settings['related_articles_title'] ?? '');
+        $default_title  = $settings_title !== ''
+            ? $settings_title
+            : __('Related Research Articles', 'trendplot-connector');
+        $title = (string) apply_filters('trendplot_related_articles_title', $default_title);
 
         // The after_tabs hook renders inside .woocommerce-tabs which is full-width.
         // Wrapping with is-layout-constrained lets WordPress/Blocksy apply

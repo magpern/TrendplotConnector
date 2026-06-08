@@ -309,7 +309,123 @@ The connector enforces a hardcoded whitelist (`MetaStore::ALLOWED_KEYS`). Any wr
 
 ---
 
-## 11. Phase 2 Preview
+## 11. Related Research Articles Block
+
+When a WooCommerce product has Trendplot articles linked to it, the plugin automatically renders a **Related Research Articles** section on that product's front-end page.
+
+### How it works
+
+1. When Trendplot creates a draft via `POST /drafts` it includes `related_products: [<product_id>]` in the body.
+2. The connector stores this as `_trendplot_related_products` (serialized int array) on the article post.
+3. On each product page request, the block queries for published posts whose `_trendplot_related_products` array contains the current product ID.
+4. Only **published** posts are returned — drafts, private, and pending posts are never shown.
+5. If no articles match, the block renders nothing and leaves no empty markup.
+6. Results are cached per product with a one-hour transient. The cache is invalidated immediately when `_trendplot_related_products` is written on any post via `POST /drafts` or `PATCH /posts/{id}/meta`.
+
+### Linking an article to a product
+
+Include `related_products` in the `POST /drafts` body:
+
+```bash
+BODY='{
+  "title": "Why BPC-157 Matters for Recovery Research",
+  "content": "<p>Research on BPC-157...</p>",
+  "trendplot_article_id": "art_bpc_001",
+  "related_products": [101]
+}'
+```
+
+Or add the relationship to an existing post via `PATCH /posts/{article_id}/meta`:
+
+```bash
+BODY='{"related_products": [101, 102]}'
+```
+
+### Admin settings
+
+Navigate to **Settings → Trendplot Connector → Related Research Articles**.
+
+| Setting | Default | Description |
+|---|---|---|
+| **Enable Block** | On | Show or hide the block site-wide |
+| **Block Title** | *(empty)* | Override the heading text; leave blank for "Related Research Articles" |
+| **Maximum Articles** | 5 | Cap on how many links to show per product (1–20) |
+| **Placement** | After product tabs | Where the block appears on the product page |
+
+**Placement options:**
+
+| Value | Hook | Position |
+|---|---|---|
+| After product tabs *(default)* | `woocommerce_product_after_tabs` | Inside `.woocommerce-tabs`, below the last tab panel |
+| After short description | `woocommerce_single_product_summary` p.21 | Below the short description, above Add to Cart |
+| After product meta | `woocommerce_single_product_summary` p.45 | Below the SKU/category meta line |
+
+### CSS classes
+
+The block uses BEM class names. Override styles in your theme's CSS:
+
+```css
+.trendplot-related-articles { }
+.trendplot-related-articles__title { }
+.trendplot-related-articles__list { }
+.trendplot-related-articles__item { }
+.trendplot-related-articles__link { }
+```
+
+The title text can also be changed programmatically without touching settings:
+
+```php
+add_filter('trendplot_related_articles_title', fn() => 'Further Reading');
+```
+
+### Fallback behaviour
+
+- **No linked articles** — the block outputs nothing; no empty `<section>` is rendered.
+- **All linked articles are drafts/private** — same as above; the WP_Query filters to `post_status = publish` only.
+- **Block disabled in settings** — the WooCommerce hook is never registered; zero HTML output and zero database queries.
+
+### WP-CLI verification
+
+```bash
+# Confirm related_products meta is stored on a Trendplot article
+docker compose run --rm wpcli wp post meta get <ARTICLE_ID> _trendplot_related_products
+
+# Run the same query the block uses (replace 101 with your product ID)
+docker compose run --rm wpcli wp eval '
+$q = new WP_Query([
+    "post_type"      => "post",
+    "post_status"    => "publish",
+    "posts_per_page" => 5,
+    "no_found_rows"  => true,
+    "meta_query"     => [["key"=>"_trendplot_related_products","value"=>serialize(101),"compare"=>"LIKE"]],
+]);
+foreach ($q->posts as $p) { echo $p->ID . " " . $p->post_title . "\n"; }
+'
+
+# Clear the per-product transient cache (forces a live query on next page load)
+docker compose run --rm wpcli wp transient delete trendplot_rel_arts_<PRODUCT_ID>
+
+# Confirm block HTML on the product page
+curl -sk "https://example.com/product/<slug>/" | grep -A 10 'trendplot-related-articles'
+```
+
+### Verification checklist
+
+- [ ] `_trendplot_related_products` meta is set on at least one published article
+- [ ] Product page shows `<section class="trendplot-related-articles">` in HTML
+- [ ] Only published articles appear; drafts are absent
+- [ ] Articles are ordered newest first
+- [ ] Changing **Maximum Articles** to 1 shows exactly 1 link
+- [ ] Changing **Placement** moves the block to the correct position
+- [ ] Changing **Block Title** updates the `<h2>` text
+- [ ] Disabling the block via **Enable Block** → unchecked removes all block HTML
+- [ ] Re-enabling restores the block
+- [ ] A product with no linked articles shows no block and no empty markup
+- [ ] Clearing the transient and reloading refreshes the article list
+
+---
+
+## 12. Phase 2 Preview
 
 The following capabilities are designed and ready to implement in Phase 2:
 
