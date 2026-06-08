@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace TrendplotConnector\Publishing;
 
 use TrendplotConnector\Meta\MetaStore;
+use TrendplotConnector\Seo\SeoManager;
 use WP_Error;
 use WP_Query;
 
@@ -74,6 +75,17 @@ class DraftManager
             }
         }
 
+        $clean_seo = null;
+        if (array_key_exists('seo', $data)) {
+            if (!is_array($data['seo'])) {
+                return new WP_Error('validation_error', 'Field "seo" must be an object.', ['status' => 400]);
+            }
+            $clean_seo = SeoManager::validate($data['seo']);
+            if (is_wp_error($clean_seo)) {
+                return $clean_seo;
+            }
+        }
+
         $post_id = wp_insert_post([
             'post_title'   => $title,
             'post_content' => $content,
@@ -120,17 +132,28 @@ class DraftManager
 
         $this->apply_elementor_template($post_id);
 
+        $seo_status = 'none';
+        if ($clean_seo !== null) {
+            if (SeoManager::is_active()) {
+                SeoManager::write($post_id, $clean_seo);
+                $seo_status = 'written';
+            } else {
+                $seo_status = 'skipped';
+            }
+        }
+
         $post = get_post($post_id);
 
         return [
-            'id'                  => $post_id,
-            'title'               => $title,
-            'slug'                => $post->post_name,
-            'status'              => 'draft',
-            'url'                 => get_permalink($post_id),
-            'edit_url'            => admin_url("post.php?post={$post_id}&action=edit"),
-            'created_at'          => get_the_date('c', $post_id),
+            'id'                   => $post_id,
+            'title'                => $title,
+            'slug'                 => $post->post_name,
+            'status'               => 'draft',
+            'url'                  => get_permalink($post_id),
+            'edit_url'             => admin_url("post.php?post={$post_id}&action=edit"),
+            'created_at'           => get_the_date('c', $post_id),
             'trendplot_article_id' => $article_id ?: null,
+            'seo_status'           => $seo_status,
         ];
     }
 
@@ -237,6 +260,17 @@ class DraftManager
             }
         }
 
+        $clean_seo = null;
+        if (array_key_exists('seo', $data)) {
+            if (!is_array($data['seo'])) {
+                return new WP_Error('validation_error', 'Field "seo" must be an object.', ['status' => 400]);
+            }
+            $clean_seo = SeoManager::validate($data['seo']);
+            if (is_wp_error($clean_seo)) {
+                return $clean_seo;
+            }
+        }
+
         // at least one updateable field must be present
         $has_post_fields = isset($data['title']) || isset($data['content']) || isset($data['excerpt']);
         $has_taxonomy    = $categories !== null || $tags !== null;
@@ -244,8 +278,9 @@ class DraftManager
             || isset($data['trendplot_source'])
             || isset($data['trendplot_generated'])
             || isset($data['trendplot_last_sync']);
+        $has_seo         = $clean_seo !== null && count($clean_seo) > 0;
 
-        if (!$has_post_fields && !$has_taxonomy && !$has_meta) {
+        if (!$has_post_fields && !$has_taxonomy && !$has_meta && !$has_seo) {
             return new WP_Error(
                 'validation_error',
                 'Request body must contain at least one updateable field.',
@@ -316,6 +351,16 @@ class DraftManager
             $this->apply_elementor_template($post_id);
         }
 
+        $seo_status = 'none';
+        if ($clean_seo !== null) {
+            if (SeoManager::is_active()) {
+                SeoManager::write($post_id, $clean_seo);
+                $seo_status = 'written';
+            } else {
+                $seo_status = 'skipped';
+            }
+        }
+
         // --- build response ---
 
         $updated_post = get_post($post_id);
@@ -331,6 +376,7 @@ class DraftManager
             'modified_at'          => get_the_modified_date('c', $post_id),
             'trendplot_article_id' => $meta['_trendplot_article_id'],
             'updated'              => true,
+            'seo_status'           => $seo_status,
         ];
     }
 

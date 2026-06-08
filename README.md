@@ -149,7 +149,15 @@ BODY='{
   "trendplot_source": "campaign_xyz",
   "trendplot_generated": "2026-06-07T12:00:00Z",
   "related_products": [101, 102],
-  "related_articles": []
+  "related_articles": [],
+  "seo": {
+    "title": "BPC-157 and TB-500 Research Overview | Example Site",
+    "description": "A research overview of the BPC-157 and TB-500 peptides.",
+    "focus_keyword": "bpc-157 tb-500 research",
+    "canonical_url": "https://example.com/bpc-157-tb-500/",
+    "robots": [],
+    "schema_type": "Article"
+  }
 }'
 
 # ... compute SIG as above ...
@@ -174,13 +182,35 @@ curl -s -X POST \
   "url": "https://example.com/?p=200",
   "edit_url": "https://example.com/wp-admin/post.php?post=200&action=edit",
   "created_at": "2026-06-07T12:00:00+00:00",
-  "trendplot_article_id": "art_abc123"
+  "trendplot_article_id": "art_abc123",
+  "seo_status": "written"
 }
 ```
 
 **Idempotency:** If a draft with the same `trendplot_article_id` already exists, the endpoint returns `409 Conflict` with the existing post ID. Trendplot must explicitly decide to update the existing draft (Phase 2) rather than creating a duplicate.
 
 **Required fields:** `title`, `content`. All other fields are optional.
+
+**SEO fields** (`seo` object, optional — requires Rank Math SEO active):
+
+| Field | Type | Constraint | Description |
+|---|---|---|---|
+| `title` | string | max 300 chars | SEO title (`rank_math_title`) |
+| `description` | string | max 500 chars | Meta description (`rank_math_description`) |
+| `focus_keyword` | string | max 300 chars | Focus keyword (`rank_math_focus_keyword`) |
+| `canonical_url` | string (URL) | valid URL or `""` | Canonical URL (`rank_math_canonical_url`) |
+| `robots` | string[] | see whitelist | Robots directives (`rank_math_robots`) |
+| `schema_type` | string | see whitelist | Rich snippet type (`rank_math_rich_snippet`) |
+
+Omit `seo` entirely to skip SEO writes. Pass `seo: {}` to no-op. An empty string for any string field deletes that meta value. An empty `robots` array deletes the stored value.
+
+**`seo_status` values:**
+
+| Value | Meaning |
+|---|---|
+| `"written"` | Rank Math active; SEO fields written |
+| `"skipped"` | Rank Math not active; SEO fields ignored |
+| `"none"` | No `seo` key in the request |
 
 ---
 
@@ -211,9 +241,16 @@ Use `PATCH /drafts/{id}` to update an existing Trendplot-created draft. All requ
   "trendplot_generated": "2026-06-07T12:00:00Z",
   "trendplot_last_sync": "2026-06-07T12:00:00Z",
   "related_products": [101, 102],
-  "related_articles": [200, 201]
+  "related_articles": [200, 201],
+  "seo": {
+    "title": "Updated SEO title | Example Site",
+    "description": "Updated meta description.",
+    "robots": ["noindex"]
+  }
 }
 ```
+
+**SEO field rules for PATCH:** Same fields and validation as `POST /drafts`. Only the fields present in the `seo` object are written — omitted fields are left unchanged. Pass `""` to delete a stored value; pass `[]` to delete stored robots. All validation runs before any WordPress write; on failure the post is left completely unchanged.
 
 **Identity rule:** If `trendplot_article_id` is supplied in the body, it must match the `_trendplot_article_id` already on the post. A mismatch returns `409 article_id_mismatch` to prevent accidentally updating the wrong draft.
 
@@ -260,7 +297,8 @@ curl -s -X PATCH \
   "edit_url": "https://example.com/wp-admin/post.php?post=200&action=edit",
   "modified_at": "2026-06-07T12:05:00+00:00",
   "trendplot_article_id": "art_abc123",
-  "updated": true
+  "updated": true,
+  "seo_status": "written"
 }
 ```
 
@@ -326,7 +364,15 @@ curl -s \
   "trendplot_article_id": "art_abc123",
   "trendplot_last_sync": "2026-06-07T12:00:00+00:00",
   "related_products": [101, 102],
-  "related_articles": []
+  "related_articles": [],
+  "seo": {
+    "title": "BPC-157 and TB-500 Research Overview | Example Site",
+    "description": "A research overview of the BPC-157 and TB-500 peptides.",
+    "focus_keyword": "bpc-157 tb-500 research",
+    "canonical_url": "https://example.com/bpc-157-tb-500/",
+    "robots": [],
+    "schema_type": "Article"
+  }
 }
 ```
 
@@ -336,6 +382,7 @@ curl -s \
 - `related_products` and `related_articles` are returned as arrays (empty array `[]` if not set).
 - `trendplot_last_sync` is `null` if never written.
 - A `status` of `"publish"` means a human editor has published the post in WordPress admin.
+- `seo` contains current Rank Math meta for the post. Fields with no stored value are `null`; `robots` is always an array. `seo` is `null` (not an object) when Rank Math is not active on the site.
 
 **Error codes:**
 
@@ -698,7 +745,84 @@ docker compose run --rm wpcli wp post list \
 
 ---
 
-## 15. Phase 2 Preview
+## 15. Rank Math SEO Integration
+
+The connector writes Rank Math SEO metadata as part of `POST /drafts` and `PATCH /drafts/{id}`. Rank Math SEO (v1.0.x+) must be installed and active. If absent, the `seo` block is silently ignored and the response includes `"seo_status": "skipped"`.
+
+### Meta key mapping
+
+| `seo` field | Rank Math meta key | Storage format |
+|---|---|---|
+| `title` | `rank_math_title` | plain string |
+| `description` | `rank_math_description` | plain string |
+| `focus_keyword` | `rank_math_focus_keyword` | plain string |
+| `canonical_url` | `rank_math_canonical_url` | plain URL string |
+| `robots` | `rank_math_robots` | PHP-serialized string array |
+| `schema_type` | `rank_math_rich_snippet` | plain string |
+
+### Whitelists
+
+**Robots directives:** `noindex`, `nofollow`, `noarchive`, `nosnippet`, `noimageindex`, `noodp`
+
+**Schema types:** `off`, `Article`, `NewsArticle`, `BlogPosting`
+
+Any value not in the whitelist returns `400 validation_error`.
+
+### Unknown seo keys
+
+Any key not in the six allowed fields returns `400 validation_error` immediately — before any WordPress write:
+
+```json
+{
+  "code": "validation_error",
+  "message": "Unknown SEO field: \"seo_title\". Allowed fields: title, description, focus_keyword, canonical_url, robots, schema_type."
+}
+```
+
+On `POST /drafts`, the draft is not created. On `PATCH /drafts/{id}`, the post is left unchanged.
+
+### WP-CLI verification
+
+```bash
+# Confirm Rank Math is active
+docker compose run --rm wpcli wp plugin list --name=seo-by-rank-math
+
+# After POST /drafts with seo fields, check written meta
+docker compose run --rm wpcli wp post meta get <ID> rank_math_title
+docker compose run --rm wpcli wp post meta get <ID> rank_math_description
+docker compose run --rm wpcli wp post meta get <ID> rank_math_focus_keyword
+docker compose run --rm wpcli wp post meta get <ID> rank_math_rich_snippet
+
+# Verify robots stored as PHP-serialized array
+docker compose run --rm wpcli wp post meta get <ID> rank_math_robots
+# Expected for robots: ["noindex"] → a:1:{i:0;s:7:"noindex";}
+
+# Test unknown seo key on POST → 400, no draft created
+BODY='{"title":"Test","content":"<p>Test.</p>","trendplot_article_id":"seo-test-x",
+      "seo":{"seo_title":"Wrong key name"}}'
+# Expected: 400 validation_error
+docker compose run --rm wpcli wp post list \
+  --meta_key=_trendplot_article_id --meta_value=seo-test-x --fields=ID
+# Expected: empty (no post created)
+```
+
+### Verification checklist
+
+- [ ] `POST /drafts` with seo fields → `seo_status: "written"`, Rank Math meta visible in WP admin
+- [ ] `PATCH /drafts/{id}` with `seo.robots: ["noindex"]` → `rank_math_robots` = `a:1:{i:0;s:7:"noindex";}`
+- [ ] `PATCH /drafts/{id}` with `seo.title: ""` → `rank_math_title` meta deleted
+- [ ] `PATCH /drafts/{id}` with `seo.robots: []` → `rank_math_robots` meta deleted
+- [ ] Rank Math deactivated → `seo_status: "skipped"`, draft still created, no rank_math_* meta written
+- [ ] `seo: {"robots": ["arbitrary-value"]}` → `400 validation_error`
+- [ ] `seo: {"schema_type": "WooCommerceProduct"}` → `400 validation_error`
+- [ ] `seo: {"seo_title": "Wrong key"}` on POST → `400 validation_error`, no post created
+- [ ] `seo: {"meta_description": "Wrong key"}` on PATCH → `400 validation_error`, post unchanged
+- [ ] `GET /drafts/{id}` → response includes `seo` block with deserialized `robots` array
+- [ ] `GET /drafts/{id}` with Rank Math deactivated → `"seo": null`
+
+---
+
+## 16. Phase 2 Preview
 
 The following capabilities are designed and ready to implement in Phase 2:
 

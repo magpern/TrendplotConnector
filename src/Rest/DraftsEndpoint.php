@@ -5,6 +5,7 @@ namespace TrendplotConnector\Rest;
 
 use TrendplotConnector\Meta\MetaStore;
 use TrendplotConnector\Publishing\DraftManager;
+use TrendplotConnector\Seo\SeoManager;
 use WP_Query;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -99,6 +100,7 @@ class DraftsEndpoint
             'trendplot_last_sync'  => $meta['_trendplot_last_sync'],
             'related_products'     => $meta['_trendplot_related_products'],
             'related_articles'     => $meta['_trendplot_related_articles'],
+            'seo'                  => SeoManager::is_active() ? SeoManager::read($post_id) : null,
         ], 200);
     }
 
