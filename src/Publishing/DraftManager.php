@@ -140,8 +140,7 @@ class DraftManager
             return;
         }
 
-        // Allow themes/plugins to override or disable the default template.
-        // Return an empty string to skip Elementor template assignment.
+        // Return '' from this filter to skip Elementor template assignment entirely.
         $template = (string) apply_filters(
             'trendplot_connector_draft_template',
             'elementor_header_footer'
@@ -154,8 +153,66 @@ class DraftManager
         update_post_meta($post_id, '_wp_page_template', $template);
         update_post_meta($post_id, '_elementor_edit_mode', 'builder');
         update_post_meta($post_id, '_elementor_template_type', 'wp-post');
-        // Empty canvas so the editor opens in Elementor immediately.
-        update_post_meta($post_id, '_elementor_data', '[]');
+
+        $version = defined('ELEMENTOR_VERSION') ? ELEMENTOR_VERSION : '4.1.1';
+        update_post_meta($post_id, '_elementor_version', $version);
+
+        // Wrap the post_content in a boxed Elementor container so Elementor
+        // renders from _elementor_data (not raw post_content).
+        // Without this, Elementor returns empty output for an empty data array
+        // and falls back to post_content, which renders edge-to-edge because
+        // the Full Width template has already stripped the theme's width wrapper.
+        $html = get_post_field('post_content', $post_id);
+        $elementor_data = $this->build_elementor_data($html);
+        update_post_meta($post_id, '_elementor_data', wp_slash($elementor_data));
+    }
+
+    private function build_elementor_data(string $html): string
+    {
+        $outer_id = $this->elementor_uid();
+        $inner_id = $this->elementor_uid();
+        $widget_id = $this->elementor_uid();
+
+        $structure = [
+            [
+                'id'       => $outer_id,
+                'elType'   => 'container',
+                'settings' => [
+                    // 'boxed' uses the site's global Elementor content-width setting
+                    // and centres the container — no hardcoded pixel value needed.
+                    'content_width'  => 'boxed',
+                    'flex_direction' => 'column',
+                    'padding'        => [
+                        'unit'      => 'px',
+                        'top'       => '48',
+                        'right'     => '20',
+                        'bottom'    => '64',
+                        'left'      => '20',
+                        'isLinked'  => false,
+                    ],
+                ],
+                'elements' => [
+                    [
+                        'id'         => $widget_id,
+                        'elType'     => 'widget',
+                        'widgetType' => 'text-editor',
+                        'settings'   => [
+                            'editor' => $html,
+                        ],
+                        'elements'   => [],
+                        'isInner'    => false,
+                    ],
+                ],
+                'isInner' => false,
+            ],
+        ];
+
+        return (string) wp_json_encode($structure, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    private function elementor_uid(): string
+    {
+        return substr(md5(uniqid((string) mt_rand(), true)), 0, 7);
     }
 
     private function find_by_article_id(string $article_id): ?int
