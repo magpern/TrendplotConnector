@@ -598,7 +598,107 @@ curl -sk "https://example.com/product/<slug>/" | grep -A 10 'trendplot-related-a
 
 ---
 
-## 13. Phase 2 Preview
+## 14. Trendplot Content Admin Screen
+
+The **Trendplot → Content** screen gives WordPress administrators a read-only view of all posts created or managed by Trendplot. It is the primary tool for monitoring sync status, debugging relationships, and tracking which drafts have been published.
+
+### Purpose
+
+- See all Trendplot-managed posts in one place
+- Monitor draft vs. published vs. scheduled status
+- Inspect product and article relationship counts
+- Navigate to the WordPress editor for any post
+- Debug article IDs and sync timestamps
+
+### Location
+
+**Trendplot → Content** in the WordPress admin sidebar (top-level Trendplot menu, position 26).
+
+### Columns
+
+| Column | Description |
+|---|---|
+| **Title** | Post title with a "Details ▾" expand link |
+| **Status** | Colour-coded badge: Draft · Pending · Scheduled · Published |
+| **WP ID** | WordPress post ID |
+| **Article ID** | `_trendplot_article_id` meta value |
+| **Products** | Count of entries in `_trendplot_related_products` |
+| **Articles** | Count of entries in `_trendplot_related_articles` |
+| **Created** | Post creation date (`YYYY-MM-DD`) |
+| **Modified** | Last modified date (`YYYY-MM-DD`) |
+| **Actions** | **Edit** (all statuses) · **View** (published) · **Preview** (draft/scheduled) |
+
+### Filters
+
+**Status tabs** — All · Draft · Pending · Scheduled · Published. Tabs only appear for statuses that have at least one post. Counts are based on the full Trendplot corpus regardless of any active search.
+
+**Search** — matches against the post title OR the `_trendplot_article_id` value.
+
+**Sorting** — click the **Created** or **Modified** column headers to toggle ascending/descending order.
+
+### Detail row
+
+Click **Details ▾** on any row to expand an inline panel showing:
+
+- Trendplot Article ID
+- Trendplot Source
+- Trendplot Generated (timestamp)
+- Trendplot Last Sync (timestamp)
+- Related Product IDs (comma-separated)
+- Related Article IDs (comma-separated)
+
+Click **Details ▴** to collapse.
+
+### Actions (per row)
+
+| Action | Condition |
+|---|---|
+| **Edit** | Always shown — opens WordPress post editor |
+| **View** | Post is `publish` — opens the live URL |
+| **Preview** | Post is `draft`, `pending`, or `future` — opens WordPress preview |
+
+No delete, publish, or status-change actions are available. This screen is intentionally read-only.
+
+### Performance
+
+- Queries only posts with `meta_key = _trendplot_article_id` via an indexed JOIN
+- Status counts use a single aggregate SQL query (not one per status)
+- 50 posts per page with standard WordPress pagination
+- Search runs at most two queries to resolve title + article-ID matches
+
+### Troubleshooting
+
+**No posts appear** — Confirm at least one post has `_trendplot_article_id` meta set:
+
+```bash
+docker compose run --rm wpcli wp post list \
+  --meta_key=_trendplot_article_id \
+  --fields=ID,post_title,post_status
+```
+
+**Menu not visible** — Verify the current user has `manage_options` capability.
+
+**Search returns unexpected results** — The search matches any substring of the article ID. Use a more specific prefix to narrow results.
+
+### Verification checklist
+
+- [ ] **Trendplot → Content** appears in the admin sidebar
+- [ ] All Trendplot-managed posts appear (draft, pending, future, publish)
+- [ ] Non-Trendplot drafts do not appear
+- [ ] Status tabs show correct counts
+- [ ] Clicking a status tab filters the table correctly
+- [ ] Searching by title returns matching posts
+- [ ] Searching by `trendplot_article_id` returns matching posts
+- [ ] Product count column shows correct count for each row
+- [ ] Article count column shows correct count for each row
+- [ ] "Details ▾" expands the metadata panel; "Details ▴" collapses it
+- [ ] Edit link opens the correct WordPress editor URL
+- [ ] View link appears only for published posts
+- [ ] Preview link appears for draft and scheduled posts
+
+---
+
+## 15. Phase 2 Preview
 
 The following capabilities are designed and ready to implement in Phase 2:
 
