@@ -64,6 +64,35 @@ class SettingsPage
             self::PAGE_SLUG,
             'trendplot_main'
         );
+
+        add_settings_section(
+            'trendplot_related_articles',
+            'Related Research Articles',
+            [self::class, 'section_related_articles'],
+            self::PAGE_SLUG
+        );
+
+        add_settings_field(
+            'related_articles_enabled',
+            'Enable Block',
+            [self::class, 'field_related_articles_enabled'],
+            self::PAGE_SLUG,
+            'trendplot_related_articles'
+        );
+        add_settings_field(
+            'related_articles_limit',
+            'Maximum Articles',
+            [self::class, 'field_related_articles_limit'],
+            self::PAGE_SLUG,
+            'trendplot_related_articles'
+        );
+        add_settings_field(
+            'related_articles_placement',
+            'Placement',
+            [self::class, 'field_related_articles_placement'],
+            self::PAGE_SLUG,
+            'trendplot_related_articles'
+        );
     }
 
     public static function handle_generate_secret(): void
@@ -102,6 +131,15 @@ class SettingsPage
         $clean['shared_secret'] = $submitted_secret !== ''
             ? sanitize_text_field($submitted_secret)
             : ($existing['shared_secret'] ?? '');
+
+        $clean['related_articles_enabled']   = !empty($input['related_articles_enabled']) ? '1' : '0';
+        $limit = (int) ($input['related_articles_limit'] ?? 5);
+        $clean['related_articles_limit']     = (string) max(1, min(20, $limit));
+        $allowed_placements = ['after_short_description', 'after_meta', 'after_tabs'];
+        $placement = $input['related_articles_placement'] ?? 'after_tabs';
+        $clean['related_articles_placement'] = in_array($placement, $allowed_placements, true)
+            ? $placement
+            : 'after_tabs';
 
         return $clean;
     }
@@ -211,5 +249,45 @@ class SettingsPage
         $value    = esc_attr($settings['allowed_origin'] ?? '');
         echo '<input type="url" name="' . esc_attr(self::OPTION_NAME) . '[allowed_origin]" value="' . $value . '" class="regular-text" placeholder="https://app.trendplot.io" />';
         echo '<p class="description">Base URL of the Trendplot service. Reserved for future CORS enforcement.</p>';
+    }
+
+    public static function section_related_articles(): void
+    {
+        echo '<p>Displays a list of Trendplot-created articles linked to a product on WooCommerce product pages.</p>';
+    }
+
+    public static function field_related_articles_enabled(): void
+    {
+        $settings = get_option(self::OPTION_NAME, []);
+        $checked  = ($settings['related_articles_enabled'] ?? '1') === '1' ? 'checked' : '';
+        echo '<input type="checkbox" name="' . esc_attr(self::OPTION_NAME) . '[related_articles_enabled]" value="1" ' . $checked . ' />';
+        echo '<label> Show Related Research Articles block on product pages</label>';
+    }
+
+    public static function field_related_articles_limit(): void
+    {
+        $settings = get_option(self::OPTION_NAME, []);
+        $value    = esc_attr((string) ($settings['related_articles_limit'] ?? '5'));
+        echo '<input type="number" name="' . esc_attr(self::OPTION_NAME) . '[related_articles_limit]" value="' . $value . '" min="1" max="20" style="width:70px;" />';
+        echo '<p class="description">Maximum articles to show per product (1–20). Default: 5.</p>';
+    }
+
+    public static function field_related_articles_placement(): void
+    {
+        $settings  = get_option(self::OPTION_NAME, []);
+        $current   = $settings['related_articles_placement'] ?? 'after_tabs';
+        $name      = esc_attr(self::OPTION_NAME) . '[related_articles_placement]';
+        $options   = [
+            'after_short_description' => 'After short description',
+            'after_meta'              => 'After product meta',
+            'after_tabs'              => 'After product tabs (default)',
+        ];
+        echo '<select name="' . $name . '">';
+        foreach ($options as $value => $label) {
+            $selected = selected($current, $value, false);
+            echo '<option value="' . esc_attr($value) . '" ' . $selected . '>' . esc_html($label) . '</option>';
+        }
+        echo '</select>';
+        echo '<p class="description">Where the block appears on the product page.</p>';
     }
 }
