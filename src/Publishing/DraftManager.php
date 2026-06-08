@@ -118,6 +118,8 @@ class DraftManager
             }
         }
 
+        $this->apply_elementor_template($post_id);
+
         $post = get_post($post_id);
 
         return [
@@ -130,6 +132,30 @@ class DraftManager
             'created_at'          => get_the_date('c', $post_id),
             'trendplot_article_id' => $article_id ?: null,
         ];
+    }
+
+    private function apply_elementor_template(int $post_id): void
+    {
+        if (!class_exists('\Elementor\Plugin')) {
+            return;
+        }
+
+        // Allow themes/plugins to override or disable the default template.
+        // Return an empty string to skip Elementor template assignment.
+        $template = (string) apply_filters(
+            'trendplot_connector_draft_template',
+            'elementor_header_footer'
+        );
+
+        if ($template === '') {
+            return;
+        }
+
+        update_post_meta($post_id, '_wp_page_template', $template);
+        update_post_meta($post_id, '_elementor_edit_mode', 'builder');
+        update_post_meta($post_id, '_elementor_template_type', 'wp-post');
+        // Empty canvas so the editor opens in Elementor immediately.
+        update_post_meta($post_id, '_elementor_data', '[]');
     }
 
     private function find_by_article_id(string $article_id): ?int
