@@ -33,9 +33,9 @@ class RelatedArticlesBlock
                 break;
             case 'after_tabs':
             default:
-                // Tabs render at woocommerce_after_single_product_summary priority 10.
-                // Priority 11 places the block immediately after the tabs, before upsells (15).
-                add_action('woocommerce_after_single_product_summary', [self::class, 'render'], 11);
+                // Standard WooCommerce hook from single-product/tabs/tabs.php — fires inside
+                // .woocommerce-tabs so the block shares the same container as the tab panels.
+                add_action('woocommerce_product_after_tabs', [self::class, 'render'], 10);
                 break;
         }
 
@@ -65,6 +65,15 @@ class RelatedArticlesBlock
             __('Related Research Articles', 'trendplot-connector')
         );
 
+        // The after_tabs hook renders inside .woocommerce-tabs which is full-width.
+        // Wrapping with is-layout-constrained lets WordPress/Blocksy apply
+        // max-width + auto margins to the section, matching the tab panel width.
+        $in_tabs = current_filter() === 'woocommerce_product_after_tabs';
+
+        if ($in_tabs) {
+            echo '<div class="is-layout-constrained">';
+        }
+
         echo '<section class="trendplot-related-articles">';
         echo '<h2 class="trendplot-related-articles__title">' . esc_html($title) . '</h2>';
         echo '<ul class="trendplot-related-articles__list">';
@@ -77,6 +86,10 @@ class RelatedArticlesBlock
         }
         echo '</ul>';
         echo '</section>';
+
+        if ($in_tabs) {
+            echo '</div>';
+        }
     }
 
     private static function get_related_articles(int $product_id): array
