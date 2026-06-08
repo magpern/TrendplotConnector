@@ -60,6 +60,7 @@ All routes use namespace `trendplot/v1` under `/wp-json/`.
 | GET | `/tags` | Required | List all post tags |
 | GET | `/drafts` | Required | List Trendplot-created drafts |
 | POST | `/drafts` | Required | **Create a draft post** |
+| PATCH | `/drafts/{id}` | Required | **Update a Trendplot-created draft** |
 | PATCH | `/posts/{id}/meta` | Required | **Write Trendplot metadata to any post** |
 
 ¹ If no shared secret is configured, `/health` is public. Once a secret is configured, HMAC auth is required.
@@ -182,7 +183,100 @@ curl -s -X POST \
 
 ---
 
-## 7. Tagging Existing Content
+## 7. Updating a Draft
+
+Use `PATCH /drafts/{id}` to update an existing Trendplot-created draft. All request fields are optional; supply only what needs changing. At least one updateable field must be present.
+
+**Allowed target posts:**
+
+| Condition | Result |
+|---|---|
+| Post does not exist | `404 not_found` |
+| Post has no `_trendplot_article_id` | `403 not_trendplot_draft` |
+| Post is `publish` or `private` | `409 published_post_rejected` |
+| Post is `draft`, `pending`, or `future` | ✅ Allowed |
+
+**Request body** (all fields optional):
+
+```json
+{
+  "title": "Updated article title",
+  "content": "<p>Updated HTML content.</p>",
+  "excerpt": "Updated excerpt.",
+  "categories": [12, 34],
+  "tags": [5, 8],
+  "trendplot_article_id": "art_abc123",
+  "trendplot_source": "campaign_xyz",
+  "trendplot_generated": "2026-06-07T12:00:00Z",
+  "trendplot_last_sync": "2026-06-07T12:00:00Z",
+  "related_products": [101, 102],
+  "related_articles": [200, 201]
+}
+```
+
+**Identity rule:** If `trendplot_article_id` is supplied in the body, it must match the `_trendplot_article_id` already on the post. A mismatch returns `409 article_id_mismatch` to prevent accidentally updating the wrong draft.
+
+**`_trendplot_last_sync`** is always written. If not supplied in the body, it is set to the current UTC timestamp automatically.
+
+**Elementor behavior:** If `content` is updated, `_elementor_data` is rebuilt from the new HTML using the same boxed container structure as `POST /drafts`. The Full Width template assignment and all Elementor meta keys are preserved.
+
+**Bash example (PATCH with new title and content):**
+
+```bash
+SITE_ID="YOUR_SITE_ID"
+SECRET="YOUR_SECRET_HERE"
+DRAFT_ID=200
+METHOD="PATCH"
+ENDPOINT="/wp-json/trendplot/v1/drafts/${DRAFT_ID}"
+TS=$(date +%s)
+BODY='{
+  "title": "Why BPC-157 and TB-500 Are Often Studied Together — Updated",
+  "content": "<p>Updated research overview.</p>",
+  "trendplot_article_id": "art_abc123"
+}'
+
+SIG=$(printf '%s\n%s\n%s\n%s' "$METHOD" "$ENDPOINT" "$TS" "$BODY" | \
+  openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')
+
+curl -s -X PATCH \
+  -H "Content-Type: application/json" \
+  -H "X-Trendplot-Site-Id: $SITE_ID" \
+  -H "X-Trendplot-Timestamp: $TS" \
+  -H "X-Trendplot-Signature: $SIG" \
+  -d "$BODY" \
+  "https://example.com${ENDPOINT}"
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "id": 200,
+  "title": "Why BPC-157 and TB-500 Are Often Studied Together — Updated",
+  "slug": "why-bpc-157-and-tb-500-are-often-studied-together",
+  "status": "draft",
+  "url": "https://example.com/?p=200",
+  "edit_url": "https://example.com/wp-admin/post.php?post=200&action=edit",
+  "modified_at": "2026-06-07T12:05:00+00:00",
+  "trendplot_article_id": "art_abc123",
+  "updated": true
+}
+```
+
+**Error codes:**
+
+| Code | HTTP | Meaning |
+|---|---|---|
+| `not_found` | 404 | Post ID does not exist |
+| `not_trendplot_draft` | 403 | Post has no `_trendplot_article_id` — not created by Trendplot |
+| `published_post_rejected` | 409 | Post is published or private — cannot be updated via this endpoint |
+| `article_id_mismatch` | 409 | Supplied `trendplot_article_id` does not match the post's stored value |
+| `validation_error` | 400 | Invalid category/tag ID, invalid product ID, empty body, etc. |
+| `content_too_large` | 413 | Content exceeds 200,000 characters |
+
+---
+
+## 8. Tagging Existing Content
 
 Use `PATCH /posts/{id}/meta` to attach Trendplot metadata to any existing WordPress post or WooCommerce product:
 
@@ -230,7 +324,7 @@ Only keys in the `_trendplot_*` whitelist are accepted. Unknown keys return `400
 
 ---
 
-## 8. Deployment Workflow
+## 9. Deployment Workflow
 
 ```bash
 # 1. Develop in the git repository
@@ -255,7 +349,7 @@ git push origin main
 
 ---
 
-## 9. WP-CLI Verification
+## 10. WP-CLI Verification
 
 ```bash
 # Activate plugin
@@ -292,7 +386,7 @@ docker compose run --rm wpcli wp post list \
 
 ---
 
-## 10. Metadata Namespace
+## 11. Metadata Namespace
 
 All Trendplot metadata uses the `_trendplot_` prefix. The leading underscore marks them as private (hidden from the default WordPress Custom Fields UI).
 
@@ -309,7 +403,7 @@ The connector enforces a hardcoded whitelist (`MetaStore::ALLOWED_KEYS`). Any wr
 
 ---
 
-## 11. Related Research Articles Block
+## 12. Related Research Articles Block
 
 When a WooCommerce product has Trendplot articles linked to it, the plugin automatically renders a **Related Research Articles** section on that product's front-end page.
 
@@ -425,7 +519,7 @@ curl -sk "https://example.com/product/<slug>/" | grep -A 10 'trendplot-related-a
 
 ---
 
-## 12. Phase 2 Preview
+## 13. Phase 2 Preview
 
 The following capabilities are designed and ready to implement in Phase 2:
 

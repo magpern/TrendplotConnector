@@ -134,6 +134,206 @@ class DraftManager
         ];
     }
 
+    public function update(int $post_id, array $data): array|WP_Error
+    {
+        // --- pre-flight checks ---
+
+        $post = get_post($post_id);
+        if (!$post) {
+            return new WP_Error('not_found', "Post ID {$post_id} does not exist.", ['status' => 404]);
+        }
+
+        $existing_article_id = (string) get_post_meta($post_id, '_trendplot_article_id', true);
+        if ($existing_article_id === '') {
+            return new WP_Error(
+                'not_trendplot_draft',
+                "Post ID {$post_id} is not a Trendplot-created draft.",
+                ['status' => 403]
+            );
+        }
+
+        if ($post->post_status === 'publish' || $post->post_status === 'private') {
+            return new WP_Error(
+                'published_post_rejected',
+                "Cannot update a post with status '{$post->post_status}'.",
+                ['status' => 409]
+            );
+        }
+
+        $allowed_statuses = ['draft', 'pending', 'future'];
+        if (!in_array($post->post_status, $allowed_statuses, true)) {
+            return new WP_Error(
+                'invalid_post_status',
+                "Cannot update a post with status '{$post->post_status}'.",
+                ['status' => 409]
+            );
+        }
+
+        // --- ownership / identity ---
+
+        if (array_key_exists('trendplot_article_id', $data)) {
+            $supplied = sanitize_text_field($data['trendplot_article_id']);
+            if ($supplied !== $existing_article_id) {
+                return new WP_Error(
+                    'article_id_mismatch',
+                    "Supplied trendplot_article_id \"{$supplied}\" does not match the existing \"{$existing_article_id}\" on post {$post_id}.",
+                    ['status' => 409]
+                );
+            }
+        }
+
+        // --- parse and validate fields ---
+
+        if (isset($data['content']) && strlen($data['content']) > self::CONTENT_MAX_LENGTH) {
+            return new WP_Error('content_too_large', 'Content exceeds 200,000 character limit.', ['status' => 413]);
+        }
+
+        $categories = null;
+        if (array_key_exists('categories', $data)) {
+            $categories = array_map('intval', (array) $data['categories']);
+            foreach ($categories as $cat_id) {
+                if (!term_exists($cat_id, 'category')) {
+                    return new WP_Error('validation_error', "Category ID {$cat_id} does not exist.", ['status' => 400]);
+                }
+            }
+        }
+
+        $tags = null;
+        if (array_key_exists('tags', $data)) {
+            $tags = array_map('intval', (array) $data['tags']);
+            foreach ($tags as $tag_id) {
+                if (!term_exists($tag_id, 'post_tag')) {
+                    return new WP_Error('validation_error', "Tag ID {$tag_id} does not exist.", ['status' => 400]);
+                }
+            }
+        }
+
+        $related_products = null;
+        if (array_key_exists('related_products', $data)) {
+            $related_products = array_map('intval', (array) $data['related_products']);
+            foreach ($related_products as $product_id) {
+                if (!$this->is_valid_product($product_id)) {
+                    return new WP_Error(
+                        'validation_error',
+                        "Product ID {$product_id} is not a valid WooCommerce product.",
+                        ['status' => 400]
+                    );
+                }
+            }
+        }
+
+        $related_articles = null;
+        if (array_key_exists('related_articles', $data)) {
+            $related_articles = array_map('intval', (array) $data['related_articles']);
+            foreach ($related_articles as $ref_id) {
+                $ref = get_post($ref_id);
+                if (!$ref || !in_array($ref->post_type, ['post', 'page'], true)) {
+                    return new WP_Error(
+                        'validation_error',
+                        "Article ID {$ref_id} is not a valid post or page.",
+                        ['status' => 400]
+                    );
+                }
+            }
+        }
+
+        // at least one updateable field must be present
+        $has_post_fields = isset($data['title']) || isset($data['content']) || isset($data['excerpt']);
+        $has_taxonomy    = $categories !== null || $tags !== null;
+        $has_meta        = $related_products !== null || $related_articles !== null
+            || isset($data['trendplot_source'])
+            || isset($data['trendplot_generated'])
+            || isset($data['trendplot_last_sync']);
+
+        if (!$has_post_fields && !$has_taxonomy && !$has_meta) {
+            return new WP_Error(
+                'validation_error',
+                'Request body must contain at least one updateable field.',
+                ['status' => 400]
+            );
+        }
+
+        // --- apply post field updates ---
+
+        $update_args = ['ID' => $post_id];
+        $content_changed = false;
+
+        if (isset($data['title'])) {
+            $update_args['post_title'] = sanitize_text_field($data['title']);
+        }
+        if (isset($data['content'])) {
+            $update_args['post_content'] = wp_kses_post($data['content']);
+            $content_changed = true;
+        }
+        if (isset($data['excerpt'])) {
+            $update_args['post_excerpt'] = wp_strip_all_tags($data['excerpt']);
+        }
+
+        if (count($update_args) > 1) {
+            $wp_result = wp_update_post($update_args, true);
+            if (is_wp_error($wp_result)) {
+                return new WP_Error('update_failed', $wp_result->get_error_message(), ['status' => 500]);
+            }
+        }
+
+        // --- apply taxonomy updates ---
+
+        if ($categories !== null) {
+            wp_set_post_categories($post_id, $categories);
+        }
+        if ($tags !== null) {
+            wp_set_post_tags($post_id, $tags);
+        }
+
+        // --- apply meta updates ---
+
+        $meta_fields = [];
+        if (!empty($data['trendplot_source'])) {
+            $meta_fields['_trendplot_source'] = sanitize_text_field($data['trendplot_source']);
+        }
+        if (!empty($data['trendplot_generated'])) {
+            $meta_fields['_trendplot_generated'] = sanitize_text_field($data['trendplot_generated']);
+        }
+        if ($related_products !== null) {
+            $meta_fields['_trendplot_related_products'] = $related_products;
+        }
+        if ($related_articles !== null) {
+            $meta_fields['_trendplot_related_articles'] = $related_articles;
+        }
+        // always stamp last_sync unless the caller explicitly provides a value
+        $meta_fields['_trendplot_last_sync'] = isset($data['trendplot_last_sync'])
+            ? sanitize_text_field($data['trendplot_last_sync'])
+            : gmdate('c');
+
+        $meta_result = MetaStore::write($post_id, $meta_fields);
+        if (is_wp_error($meta_result)) {
+            return $meta_result;
+        }
+
+        // --- rebuild Elementor data when content changed ---
+
+        if ($content_changed) {
+            $this->apply_elementor_template($post_id);
+        }
+
+        // --- build response ---
+
+        $updated_post = get_post($post_id);
+        $meta         = MetaStore::read($post_id);
+
+        return [
+            'id'                   => $post_id,
+            'title'                => $updated_post->post_title,
+            'slug'                 => $updated_post->post_name,
+            'status'               => $updated_post->post_status,
+            'url'                  => get_permalink($post_id),
+            'edit_url'             => admin_url("post.php?post={$post_id}&action=edit"),
+            'modified_at'          => get_the_modified_date('c', $post_id),
+            'trendplot_article_id' => $meta['_trendplot_article_id'],
+            'updated'              => true,
+        ];
+    }
+
     private function apply_elementor_template(int $post_id): void
     {
         if (!class_exists('\Elementor\Plugin')) {

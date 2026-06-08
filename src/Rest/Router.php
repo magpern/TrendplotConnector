@@ -52,6 +52,15 @@ class Router
             ],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/drafts/(?P<id>\d+)', [
+            'methods'             => 'PATCH',
+            'callback'            => [DraftsEndpoint::class, 'handle_patch'],
+            'permission_callback' => [HmacAuth::class, 'verify'],
+            'args'                => [
+                'id' => ['sanitize_callback' => 'absint'],
+            ],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/posts/(?P<id>\d+)/meta', [
             'methods'             => 'PATCH',
             'callback'            => [MetaEndpoint::class, 'handle'],

@@ -58,6 +58,31 @@ class DraftsEndpoint
         ], 200);
     }
 
+    public static function handle_patch(WP_REST_Request $request): WP_REST_Response
+    {
+        $post_id = (int) $request->get_param('id');
+        $body    = $request->get_json_params();
+
+        if (!is_array($body) || empty($body)) {
+            return new WP_REST_Response(
+                ['code' => 'invalid_body', 'message' => 'Request body must be a non-empty JSON object.'],
+                400
+            );
+        }
+
+        $manager = new DraftManager();
+        $result  = $manager->update($post_id, $body);
+
+        if (is_wp_error($result)) {
+            return new WP_REST_Response(
+                ['code' => $result->get_error_code(), 'message' => $result->get_error_message()],
+                (int) ($result->get_error_data()['status'] ?? 400)
+            );
+        }
+
+        return new WP_REST_Response($result, 200);
+    }
+
     public static function handle_post(WP_REST_Request $request): WP_REST_Response
     {
         $body = $request->get_json_params();
