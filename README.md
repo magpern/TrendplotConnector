@@ -60,6 +60,7 @@ All routes use namespace `trendplot/v1` under `/wp-json/`.
 | GET | `/tags` | Required | List all post tags |
 | GET | `/drafts` | Required | List Trendplot-created drafts |
 | POST | `/drafts` | Required | **Create a draft post** |
+| GET | `/drafts/{id}` | Required | **Retrieve current status of a Trendplot-managed post** |
 | PATCH | `/drafts/{id}` | Required | **Update a Trendplot-created draft** |
 | PATCH | `/posts/{id}/meta` | Required | **Write Trendplot metadata to any post** |
 
@@ -276,7 +277,85 @@ curl -s -X PATCH \
 
 ---
 
-## 8. Tagging Existing Content
+## 8. Retrieving Draft Status
+
+Use `GET /drafts/{id}` to check the current WordPress status of a post that Trendplot created or manages. This is the primary way to detect whether a human editor has published, moved to pending, or otherwise changed the state of a Trendplot-created post.
+
+**Rules:**
+
+| Condition | Result |
+|---|---|
+| Post does not exist | `404 not_found` |
+| Post has no `_trendplot_article_id` | `403 not_trendplot_post` |
+| Post is `trash`, `private`, or other non-standard status | `404 not_found` |
+| Post is `draft`, `pending`, `future`, or `publish` | ✅ `200 OK` |
+
+No request body is required — HMAC auth headers only.
+
+**Bash example:**
+
+```bash
+SITE_ID="YOUR_SITE_ID"
+SECRET="YOUR_SECRET_HERE"
+DRAFT_ID=200
+METHOD="GET"
+ENDPOINT="/wp-json/trendplot/v1/drafts/${DRAFT_ID}"
+TS=$(date +%s)
+BODY=""
+
+SIG=$(printf '%s\n%s\n%s\n%s' "$METHOD" "$ENDPOINT" "$TS" "$BODY" | \
+  openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')
+
+curl -s \
+  -H "X-Trendplot-Site-Id: $SITE_ID" \
+  -H "X-Trendplot-Timestamp: $TS" \
+  -H "X-Trendplot-Signature: $SIG" \
+  "https://example.com${ENDPOINT}"
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "id": 200,
+  "title": "Why BPC-157 and TB-500 Are Often Studied Together",
+  "status": "draft",
+  "url": "https://example.com/?p=200",
+  "edit_url": "https://example.com/wp-admin/post.php?post=200&action=edit",
+  "modified_at": "2026-06-07T12:05:00+00:00",
+  "trendplot_article_id": "art_abc123",
+  "trendplot_last_sync": "2026-06-07T12:00:00+00:00",
+  "related_products": [101, 102],
+  "related_articles": []
+}
+```
+
+**Notes:**
+
+- Post `content` and `excerpt` are never returned — this endpoint exposes status and metadata only.
+- `related_products` and `related_articles` are returned as arrays (empty array `[]` if not set).
+- `trendplot_last_sync` is `null` if never written.
+- A `status` of `"publish"` means a human editor has published the post in WordPress admin.
+
+**Error codes:**
+
+| Code | HTTP | Meaning |
+|---|---|---|
+| `not_found` | 404 | Post ID does not exist or is not in a supported status |
+| `not_trendplot_post` | 403 | Post has no `_trendplot_article_id` — not managed by Trendplot |
+
+**Verification checklist:**
+
+- [ ] `GET /drafts/<nonexistent-id>` → `404 not_found`
+- [ ] `GET /drafts/<id-without-trendplot-meta>` → `403 not_trendplot_post`
+- [ ] `GET /drafts/<valid-trendplot-draft-id>` → `200` with correct fields, no `content`
+- [ ] `GET /drafts/<published-trendplot-post-id>` → `200` with `"status": "publish"`
+- [ ] Response contains `related_products` and `related_articles` as arrays
+- [ ] No `content`, `excerpt`, or customer data in response
+
+---
+
+## 9. Tagging Existing Content
 
 Use `PATCH /posts/{id}/meta` to attach Trendplot metadata to any existing WordPress post or WooCommerce product:
 
@@ -324,7 +403,7 @@ Only keys in the `_trendplot_*` whitelist are accepted. Unknown keys return `400
 
 ---
 
-## 9. Deployment Workflow
+## 10. Deployment Workflow
 
 ```bash
 # 1. Develop in the git repository
@@ -349,7 +428,7 @@ git push origin main
 
 ---
 
-## 10. WP-CLI Verification
+## 11. WP-CLI Verification
 
 ```bash
 # Activate plugin
@@ -386,7 +465,7 @@ docker compose run --rm wpcli wp post list \
 
 ---
 
-## 11. Metadata Namespace
+## 12. Metadata Namespace
 
 All Trendplot metadata uses the `_trendplot_` prefix. The leading underscore marks them as private (hidden from the default WordPress Custom Fields UI).
 
@@ -403,7 +482,7 @@ The connector enforces a hardcoded whitelist (`MetaStore::ALLOWED_KEYS`). Any wr
 
 ---
 
-## 12. Related Research Articles Block
+## 13. Related Research Articles Block
 
 When a WooCommerce product has Trendplot articles linked to it, the plugin automatically renders a **Related Research Articles** section on that product's front-end page.
 

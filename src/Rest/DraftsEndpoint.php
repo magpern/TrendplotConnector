@@ -58,6 +58,50 @@ class DraftsEndpoint
         ], 200);
     }
 
+    public static function handle_get_single(WP_REST_Request $request): WP_REST_Response
+    {
+        $post_id = (int) $request->get_param('id');
+
+        $post = get_post($post_id);
+        if (!$post) {
+            return new WP_REST_Response(
+                ['code' => 'not_found', 'message' => "Post ID {$post_id} does not exist."],
+                404
+            );
+        }
+
+        $article_id = (string) get_post_meta($post_id, '_trendplot_article_id', true);
+        if ($article_id === '') {
+            return new WP_REST_Response(
+                ['code' => 'not_trendplot_post', 'message' => "Post ID {$post_id} is not a Trendplot-managed post."],
+                403
+            );
+        }
+
+        $allowed_statuses = ['draft', 'pending', 'future', 'publish'];
+        if (!in_array($post->post_status, $allowed_statuses, true)) {
+            return new WP_REST_Response(
+                ['code' => 'not_found', 'message' => "Post ID {$post_id} does not exist."],
+                404
+            );
+        }
+
+        $meta = MetaStore::read($post_id);
+
+        return new WP_REST_Response([
+            'id'                   => $post_id,
+            'title'                => $post->post_title,
+            'status'               => $post->post_status,
+            'url'                  => get_permalink($post_id),
+            'edit_url'             => admin_url("post.php?post={$post_id}&action=edit"),
+            'modified_at'          => get_the_modified_date('c', $post_id),
+            'trendplot_article_id' => $meta['_trendplot_article_id'],
+            'trendplot_last_sync'  => $meta['_trendplot_last_sync'],
+            'related_products'     => $meta['_trendplot_related_products'],
+            'related_articles'     => $meta['_trendplot_related_articles'],
+        ], 200);
+    }
+
     public static function handle_patch(WP_REST_Request $request): WP_REST_Response
     {
         $post_id = (int) $request->get_param('id');
