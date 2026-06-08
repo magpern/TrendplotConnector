@@ -54,11 +54,14 @@ class MetaStore
 
     public static function count_trendplot_posts(): int
     {
+        // Count only post_type=post to match the Content admin screen scope.
+        // WooCommerce products tagged via PATCH /posts/{id}/meta are excluded —
+        // they are product-article associations, not managed articles.
         $query = new WP_Query([
-            'post_type'      => 'any',
+            'post_type'      => 'post',
             'post_status'    => ['draft', 'pending', 'future', 'publish'],
             'meta_key'       => '_trendplot_article_id',
-            'posts_per_page' => -1,
+            'posts_per_page' => 1,
             'fields'         => 'ids',
             'no_found_rows'  => false,
         ]);

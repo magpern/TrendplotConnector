@@ -7,18 +7,29 @@ use TrendplotConnector\Meta\MetaStore;
 
 class SettingsPage
 {
-    private const OPTION_NAME = 'trendplot_connector_settings';
-    private const PAGE_SLUG   = 'trendplot-connector';
+    private const OPTION_NAME    = 'trendplot_connector_settings';
+    private const PAGE_SLUG      = 'trendplot-settings';
+    private const LEGACY_SLUG    = 'trendplot-connector';
 
     public static function register_menu(): void
     {
-        add_options_page(
-            'Trendplot Connector',
-            'Trendplot Connector',
+        add_submenu_page(
+            'trendplot',
+            'Trendplot Settings',
+            'Settings',
             'manage_options',
             self::PAGE_SLUG,
             [self::class, 'render_page']
         );
+    }
+
+    public static function redirect_legacy(): void
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        if ((sanitize_text_field($_GET['page'] ?? '')) === self::LEGACY_SLUG) {
+            wp_redirect(admin_url('admin.php?page=' . self::PAGE_SLUG), 301);
+            exit;
+        }
     }
 
     public static function register_settings(): void
@@ -118,7 +129,7 @@ class SettingsPage
         update_option(self::OPTION_NAME, $settings);
         set_transient('trendplot_new_secret_' . get_current_user_id(), $new_secret, 300);
 
-        wp_redirect(admin_url('options-general.php?page=' . self::PAGE_SLUG . '&secret_generated=1'));
+        wp_redirect(admin_url('admin.php?page=' . self::PAGE_SLUG . '&secret_generated=1'));
         exit;
     }
 
@@ -199,7 +210,12 @@ class SettingsPage
                 <div class="notice notice-success"><p>New shared secret generated and saved.</p></div>
             <?php endif; ?>
 
-            <p>Trendplot-managed posts: <strong><?php echo esc_html((string) $draft_count); ?></strong></p>
+            <p>
+                Trendplot articles (draft&thinsp;·&thinsp;pending&thinsp;·&thinsp;scheduled&thinsp;·&thinsp;published):
+                <strong><?php echo esc_html((string) $draft_count); ?></strong>
+                &nbsp;&mdash;&nbsp;
+                <a href="<?php echo esc_url(admin_url('admin.php?page=trendplot')); ?>">View in Content screen</a>
+            </p>
 
             <form method="post" action="options.php">
                 <?php

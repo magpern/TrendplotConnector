@@ -33,7 +33,7 @@ docker compose run --rm wpcli wp rewrite flush
 
 ## 3. Configuration
 
-Navigate to **Settings → Trendplot Connector** in the WordPress admin.
+Navigate to **Trendplot → Settings** in the WordPress admin sidebar.
 
 | Field | Description |
 |---|---|
@@ -516,7 +516,7 @@ BODY='{"related_products": [101, 102]}'
 
 ### Admin settings
 
-Navigate to **Settings → Trendplot Connector → Related Research Articles**.
+Navigate to **Trendplot → Settings → Related Research Articles**.
 
 | Setting | Default | Description |
 |---|---|---|
