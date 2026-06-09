@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lint-and-build:
+    name: PHP ${{ matrix.php-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version:
+          - '8.1'
+          - '8.2'
+          - '8.3'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          coverage: none
+
+      - name: PHP syntax lint
+        run: bash scripts/verify-plugin.sh --lint-only
+
+      - name: Build release ZIP
+        run: bash scripts/build-zip.sh
+
+      - name: Verify release ZIP
+        run: |
+          VERSION="$(grep -E '^\s*\*\s*Version:' trendplot-connector.php | head -n 1 | sed -E 's/^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*//')"
+          ZIP_PATH="${GITHUB_WORKSPACE}/builds/trendplot-connector-${VERSION}.zip"
+          if [[ ! -f "${ZIP_PATH}" ]]; then
+            echo "ERROR: expected zip not found: ${ZIP_PATH}" >&2
+            exit 1
+          fi
+          echo "OK: ${ZIP_PATH}"
+
+      - name: Forbidden brand check
+        run: bash scripts/verify-plugin.sh --brand-check-only
