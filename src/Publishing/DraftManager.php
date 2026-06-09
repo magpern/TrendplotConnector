@@ -27,7 +27,7 @@ class DraftManager
         $title   = sanitize_text_field($data['title']);
         $content = wp_kses_post($data['content']);
         $excerpt = wp_strip_all_tags($data['excerpt'] ?? '');
-        $slug    = isset($data['slug']) ? sanitize_title($data['slug']) : '';
+        $slug    = (!empty($data['slug']) && is_string($data['slug'])) ? sanitize_title($data['slug']) : '';
 
         $categories = array_map('intval', $data['categories'] ?? []);
         $tags        = array_map('intval', $data['tags'] ?? []);
@@ -308,7 +308,7 @@ class DraftManager
         if (isset($data['excerpt'])) {
             $update_args['post_excerpt'] = wp_strip_all_tags($data['excerpt']);
         }
-        if (isset($data['slug'])) {
+        if (isset($data['slug']) && is_string($data['slug']) && $data['slug'] !== '') {
             $update_args['post_name'] = sanitize_title($data['slug']);
         }
 
