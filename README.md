@@ -674,7 +674,7 @@ docker compose run --rm wpcli wp eval \
   'foreach(rest_get_server()->get_routes() as $r => $h) { if(str_contains($r,"trendplot")) echo $r."\n"; }'
 
 # Test /health (no auth when no secret configured)
-curl -sk https://test.biopentra.eu/wp-json/trendplot/v1/health | python3 -m json.tool
+curl -sk https://YOUR_WORDPRESS_SITE/wp-json/trendplot/v1/health | python3 -m json.tool
 
 # Set test credentials (placeholder values only — replace with real values)
 docker compose run --rm wpcli wp option update trendplot_connector_settings \

@@ -6,7 +6,7 @@
  * Version:     1.0.0
  * Requires PHP: 8.1
  * Requires at least: 6.5
- * Author:      Biopentra
+ * Author:      Trendplot
  * Text Domain: trendplot-connector
  */
 
