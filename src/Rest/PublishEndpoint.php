@@ -55,12 +55,23 @@ class PublishEndpoint
             );
         }
 
+        $url               = (string) get_permalink($post_id);
+        $indexing_triggered = false;
+        if (class_exists('RankMath\Instant_Indexing\Api')) {
+            $api = \RankMath\Instant_Indexing\Api::get();
+            if (!empty($api->get_key())) {
+                $api->submit([$url], false);
+                $indexing_triggered = true;
+            }
+        }
+
         return new WP_REST_Response([
-            'id'        => $post_id,
-            'status'    => 'publish',
-            'published' => true,
-            'url'       => (string) get_permalink($post_id),
-            'edit_url'  => admin_url("post.php?post={$post_id}&action=edit"),
+            'id'                 => $post_id,
+            'status'             => 'publish',
+            'published'          => true,
+            'url'                => $url,
+            'edit_url'           => admin_url("post.php?post={$post_id}&action=edit"),
+            'indexing_triggered' => $indexing_triggered,
         ], 200);
     }
 
