@@ -64,6 +64,8 @@ All routes use namespace `trendplot/v1` under `/wp-json/`.
 | PATCH | `/drafts/{id}` | Required | **Update a Trendplot-created draft** |
 | GET | `/posts/{id}/seo` | Required | **Read current Rank Math SEO values for any Trendplot-managed post** |
 | PATCH | `/posts/{id}/seo` | Required | **Update Rank Math SEO for any Trendplot-managed post (published or draft)** |
+| POST | `/posts/{id}/publish` | Required | **Publish a Trendplot-managed draft** |
+| POST | `/posts/{id}/unpublish` | Required | **Revert a published Trendplot-managed post to draft** |
 | PATCH | `/posts/{id}/meta` | Required | **Write Trendplot metadata to any post** |
 
 ¹ If no shared secret is configured, `/health` is public. Once a secret is configured, HMAC auth is required.
@@ -1002,7 +1004,162 @@ docker compose run --rm wpcli wp post list \
 
 ---
 
-## 17. Phase 2 Preview
+## 17. Publishing Workflow
+
+Trendplot manages the full draft → publish → unpublish lifecycle via dedicated endpoints. Only Trendplot-managed posts (those with `_trendplot_article_id` metadata) are eligible. All content, SEO metadata, Elementor data, and related article metadata are preserved across every status transition.
+
+### POST /posts/{id}/publish
+
+Transitions a draft, pending, or scheduled post to `publish` status.
+
+| Condition | Result |
+|---|---|
+| Post does not exist or is trash/auto-draft | `404 not_found` |
+| No `_trendplot_article_id` | `403 not_trendplot_post` |
+| Status is already `publish` or `private` | `409 invalid_status_transition` |
+| Status is `draft`, `pending`, or `future` | ✅ Published |
+
+**Response (200 OK):**
+
+```json
+{
+  "id": 123,
+  "status": "publish",
+  "published": true,
+  "url": "https://example.com/post-slug/",
+  "edit_url": "https://example.com/wp-admin/post.php?post=123&action=edit"
+}
+```
+
+**Bash example:**
+
+```bash
+TS=$(date +%s)
+ENDPOINT="/wp-json/trendplot/v1/posts/123/publish"
+SIG=$(printf 'POST\n%s\n%s\n' "$ENDPOINT" "$TS" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')
+
+curl -s -X POST \
+  -H "Content-Type: application/json" \
+  -H "X-Trendplot-Site-Id: $SITE_ID" \
+  -H "X-Trendplot-Timestamp: $TS" \
+  -H "X-Trendplot-Signature: $SIG" \
+  "https://example.com${ENDPOINT}"
+```
+
+### POST /posts/{id}/unpublish
+
+Reverts a published post back to `draft` status.
+
+| Condition | Result |
+|---|---|
+| Post does not exist or is trash/auto-draft | `404 not_found` |
+| No `_trendplot_article_id` | `403 not_trendplot_post` |
+| Status is not `publish` | `409 invalid_status_transition` |
+| Status is `publish` | ✅ Reverted to draft |
+
+**Response (200 OK):**
+
+```json
+{
+  "id": 123,
+  "status": "draft",
+  "published": false
+}
+```
+
+### What is preserved across transitions
+
+All of the following survive both publish and unpublish:
+
+- Post content (`post_content`)
+- Post title (`post_title`)
+- Elementor layout (`_elementor_data`, `_elementor_edit_mode`, `_elementor_template_type`)
+- Rank Math SEO metadata (`rank_math_title`, `rank_math_description`, `rank_math_focus_keyword`, `rank_math_robots`, `rank_math_rich_snippet`, `rank_math_canonical_url`)
+- Trendplot metadata (`_trendplot_article_id`, `_trendplot_source`, `_trendplot_last_sync`, etc.)
+- Related products and articles
+- Categories and tags
+
+### Verification checklist
+
+- [x] Draft → Publish via `POST /posts/{id}/publish` → `{ status: "publish", published: true, url: "..." }`
+- [x] Publish → Draft via `POST /posts/{id}/unpublish` → `{ status: "draft", published: false }`
+- [x] SEO metadata (`rank_math_title`, `rank_math_description`) unchanged after publish
+- [x] Elementor data length unchanged after publish
+- [x] `_trendplot_article_id` unchanged after publish
+- [x] Publish already-published post → `409 invalid_status_transition`
+- [x] Unpublish a draft → `409 invalid_status_transition`
+- [x] Non-Trendplot post → `403 not_trendplot_post`
+- [x] Non-existent post → `404 not_found`
+
+---
+
+## 18. SEO Score Visibility
+
+The **Trendplot → Content** screen shows Rank Math SEO scores for all managed posts.
+
+### Score source
+
+The score is read from the `rank_math_seo_score` post meta key (integer 0–100). This value is written by the Rank Math editor when a post is saved through the WordPress admin. Posts created via the Trendplot API have no score until they are opened and saved in the editor.
+
+| Score | Display |
+|---|---|
+| 90–100 | Green chip |
+| 80–89 | Light green chip |
+| 70–79 | Yellow chip |
+| 60–69 | Orange chip |
+| 0–59 | Red chip |
+| Not set | — |
+
+The plugin never calculates or assigns its own SEO score. If `rank_math_seo_score` is absent, the column shows `—`.
+
+### Dashboard average
+
+The **Avg SEO Score** card on the Content dashboard shows the mean score across all Trendplot-managed posts that have a score. Posts without a score are excluded from the average.
+
+---
+
+## 19. Bulk Actions
+
+The **Trendplot → Content** screen supports bulk publishing and unpublishing.
+
+### How to use
+
+1. Check one or more posts using the checkbox column.
+2. Select **Publish selected** or **Unpublish selected** from the bulk action dropdown.
+3. Click **Apply**.
+
+### Rules
+
+- Only Trendplot-managed posts are operated on (posts without `_trendplot_article_id` are skipped).
+- Only valid transitions are applied: `Publish selected` only acts on `draft`, `pending`, `future` posts; `Unpublish selected` only acts on `publish` posts.
+- Posts that cannot transition are counted as skipped.
+
+### Result notice
+
+After a bulk action, a notice is shown:
+
+```
+Published 7 posts. Skipped 2 (invalid transition or not Trendplot-managed).
+```
+
+---
+
+## 20. Content Dashboard
+
+The top of the **Trendplot → Content** screen shows four summary cards:
+
+| Card | Value |
+|---|---|
+| Articles | Total Trendplot-managed posts across all statuses |
+| Drafts | Total of draft + pending + scheduled posts |
+| Published | Total published posts |
+| Avg SEO Score | Mean Rank Math score across scored posts, or — if none |
+
+The dashboard uses a direct database query and does not add page load overhead for large post counts.
+
+---
+
+## 21. Phase 2 Preview
 
 The following capabilities are designed and ready to implement in Phase 2:
 

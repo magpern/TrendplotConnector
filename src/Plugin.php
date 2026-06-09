@@ -18,6 +18,9 @@ class Plugin
         add_action('admin_init', [SettingsPage::class, 'register_settings']);
         add_action('admin_init', [SettingsPage::class, 'handle_generate_secret']);
         add_action('admin_init', [SettingsPage::class, 'redirect_legacy']);
+        add_action('admin_init', [ContentPage::class, 'handle_bulk_actions']);
+        add_action('admin_post_tp_publish_post', [ContentPage::class, 'handle_row_publish']);
+        add_action('admin_post_tp_unpublish_post', [ContentPage::class, 'handle_row_unpublish']);
         RelatedArticlesBlock::register_hooks();
     }
 }

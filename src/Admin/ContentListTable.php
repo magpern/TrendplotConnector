@@ -29,15 +29,16 @@ class ContentListTable extends \WP_List_Table
     public function get_columns(): array
     {
         return [
+            'cb'               => '<input type="checkbox" />',
             'title'            => 'Title',
             'status'           => 'Status',
-            'wp_id'            => 'WP ID',
+            'seo_score'        => 'SEO Score',
+            'wp_url'           => 'URL',
             'article_id'       => 'Article ID',
             'related_products' => 'Products',
             'related_articles' => 'Articles',
             'created'          => 'Created',
             'modified'         => 'Modified',
-            'actions'          => 'Actions',
         ];
     }
 
@@ -51,7 +52,10 @@ class ContentListTable extends \WP_List_Table
 
     protected function get_bulk_actions(): array
     {
-        return [];
+        return [
+            'tp_bulk_publish'   => 'Publish selected',
+            'tp_bulk_unpublish' => 'Unpublish selected',
+        ];
     }
 
     public function no_items(): void
@@ -64,16 +68,53 @@ class ContentListTable extends \WP_List_Table
         return '';
     }
 
+    protected function column_cb($item): string
+    {
+        return sprintf(
+            '<input type="checkbox" name="trendplot_post[]" value="%d" />',
+            (int) $item['id']
+        );
+    }
+
     protected function column_title(array $item): string
     {
         $title    = $item['title'] !== '' ? $item['title'] : '(no title)';
         $edit_url = admin_url("post.php?post={$item['id']}&action=edit");
         $row_id   = 'tp-details-' . $item['id'];
+        $post_id  = (int) $item['id'];
 
-        $out  = '<strong><a href="' . esc_url($edit_url) . '">' . esc_html($title) . '</a></strong>';
-        $out .= '<div class="row-actions"><span class="details">';
-        $out .= '<a href="#" class="tp-details-toggle" data-row="' . esc_attr($row_id) . '">Details &#9662;</a>';
-        $out .= '</span></div>';
+        $out = '<strong><a href="' . esc_url($edit_url) . '">' . esc_html($title) . '</a></strong>';
+
+        // Row actions
+        $actions = [];
+        $actions['edit'] = '<a href="' . esc_url($edit_url) . '">Edit</a>';
+
+        if ($item['status'] === 'publish') {
+            $actions['view'] = '<a href="' . esc_url($item['url']) . '" target="_blank" rel="noopener">View</a>';
+
+            $unpublish_url = wp_nonce_url(
+                admin_url("admin-post.php?action=tp_unpublish_post&post_id={$post_id}"),
+                'tp_unpublish_' . $post_id
+            );
+            $actions['unpublish'] = '<a href="' . esc_url($unpublish_url) . '" '
+                . 'onclick="return confirm(\'Move this post back to draft?\')" '
+                . 'class="tp-row-action-unpublish">Unpublish</a>';
+        } else {
+            $preview_url = (string) get_preview_post_link($post_id);
+            $actions['preview'] = '<a href="' . esc_url($preview_url) . '" target="_blank" rel="noopener">Preview</a>';
+
+            $publish_url = wp_nonce_url(
+                admin_url("admin-post.php?action=tp_publish_post&post_id={$post_id}"),
+                'tp_publish_' . $post_id
+            );
+            $actions['publish'] = '<a href="' . esc_url($publish_url) . '" '
+                . 'onclick="return confirm(\'Publish this post now?\')" '
+                . 'class="tp-row-action-publish">Publish</a>';
+        }
+
+        $actions['details'] = '<a href="#" class="tp-details-toggle" data-row="' . esc_attr($row_id) . '">Details &#9662;</a>';
+
+        $out .= $this->row_actions($actions);
         return $out;
     }
 
@@ -89,9 +130,23 @@ class ContentListTable extends \WP_List_Table
         return '<span class="tp-badge ' . esc_attr($class) . '">' . esc_html($label) . '</span>';
     }
 
-    protected function column_wp_id(array $item): string
+    protected function column_seo_score(array $item): string
     {
-        return esc_html((string) $item['id']);
+        $score = $item['seo_score'];
+        if ($score === null) {
+            return '<span class="tp-score-na">—</span>';
+        }
+        $class = self::score_class($score);
+        return '<span class="tp-score ' . esc_attr($class) . '">' . (int) $score . '</span>';
+    }
+
+    protected function column_wp_url(array $item): string
+    {
+        if ($item['status'] === 'publish') {
+            return '<a href="' . esc_url($item['url']) . '" target="_blank" rel="noopener" class="tp-url-link" title="' . esc_attr($item['url']) . '">↗ View</a>';
+        }
+        $preview_url = (string) get_preview_post_link((int) $item['id']);
+        return '<a href="' . esc_url($preview_url) . '" target="_blank" rel="noopener" class="tp-url-link">↗ Preview</a>';
     }
 
     protected function column_article_id(array $item): string
@@ -121,21 +176,6 @@ class ContentListTable extends \WP_List_Table
         return esc_html($item['modified']);
     }
 
-    protected function column_actions(array $item): string
-    {
-        $edit_url = admin_url("post.php?post={$item['id']}&action=edit");
-        $out      = '<a href="' . esc_url($edit_url) . '">Edit</a>';
-
-        if ($item['status'] === 'publish') {
-            $out .= ' &nbsp;|&nbsp; <a href="' . esc_url($item['url']) . '" target="_blank" rel="noopener">View</a>';
-        } else {
-            $preview_url = (string) get_preview_post_link($item['id']);
-            $out        .= ' &nbsp;|&nbsp; <a href="' . esc_url($preview_url) . '" target="_blank" rel="noopener">Preview</a>';
-        }
-
-        return $out;
-    }
-
     public function single_row(mixed $item): void
     {
         echo '<tr class="tp-content-row">';
@@ -155,6 +195,7 @@ class ContentListTable extends \WP_List_Table
         echo '<td colspan="' . (int) $col_count . '" class="tp-details-cell">';
         echo '<table class="tp-details-inner">';
         $fields = [
+            'WP Post ID'           => esc_html((string) $item['id']),
             'Trendplot Article ID' => esc_html($item['article_id'] ?: '—'),
             'Trendplot Source'     => esc_html($item['source'] ?: '—'),
             'Trendplot Generated'  => esc_html($item['generated'] ?: '—'),
@@ -215,7 +256,7 @@ class ContentListTable extends \WP_List_Table
         return $views;
     }
 
-    private function get_status_counts(): array
+    public function get_status_counts(): array
     {
         if ($this->status_count_cache !== null) {
             return $this->status_count_cache;
@@ -242,6 +283,23 @@ class ContentListTable extends \WP_List_Table
 
         $this->status_count_cache = $counts;
         return $counts;
+    }
+
+    public function get_avg_seo_score(): ?int
+    {
+        global $wpdb;
+        $avg = $wpdb->get_var(
+            "SELECT AVG(CAST(pm.meta_value AS UNSIGNED))
+             FROM {$wpdb->posts} p
+             INNER JOIN {$wpdb->postmeta} tp ON p.ID = tp.post_id AND tp.meta_key = '_trendplot_article_id'
+             INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+               AND pm.meta_key = 'rank_math_seo_score'
+               AND pm.meta_value != ''
+               AND pm.meta_value > 0
+             WHERE p.post_status IN ('draft','pending','future','publish')
+               AND p.post_type = 'post'"
+        );
+        return $avg !== null ? (int) round((float) $avg) : null;
     }
 
     public function prepare_items(): void
@@ -280,9 +338,10 @@ class ContentListTable extends \WP_List_Table
         $this->items = [];
 
         foreach ($query->posts as $post) {
-            $meta     = MetaStore::read($post->ID);
-            $products = is_array($meta['_trendplot_related_products']) ? $meta['_trendplot_related_products'] : [];
-            $articles = is_array($meta['_trendplot_related_articles']) ? $meta['_trendplot_related_articles'] : [];
+            $meta      = MetaStore::read($post->ID);
+            $products  = is_array($meta['_trendplot_related_products']) ? $meta['_trendplot_related_products'] : [];
+            $articles  = is_array($meta['_trendplot_related_articles']) ? $meta['_trendplot_related_articles'] : [];
+            $score_raw = get_post_meta($post->ID, 'rank_math_seo_score', true);
 
             $this->items[] = [
                 'id'               => $post->ID,
@@ -297,6 +356,7 @@ class ContentListTable extends \WP_List_Table
                 'related_articles' => $articles,
                 'created'          => (string) get_the_date('Y-m-d', $post->ID),
                 'modified'         => (string) get_the_modified_date('Y-m-d', $post->ID),
+                'seo_score'        => ($score_raw !== '' && $score_raw !== false) ? (int) $score_raw : null,
             ];
         }
 
@@ -349,5 +409,14 @@ class ContentListTable extends \WP_List_Table
         $query_args['post__in'] = !empty($all_ids) ? $all_ids : [0];
 
         return $query_args;
+    }
+
+    private static function score_class(int $score): string
+    {
+        if ($score >= 90) return 'tp-score-green';
+        if ($score >= 80) return 'tp-score-lightgreen';
+        if ($score >= 70) return 'tp-score-yellow';
+        if ($score >= 60) return 'tp-score-orange';
+        return 'tp-score-red';
     }
 }

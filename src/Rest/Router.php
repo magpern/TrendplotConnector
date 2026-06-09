@@ -71,6 +71,20 @@ class Router
             ],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/posts/(?P<id>\d+)/publish', [
+            'methods'             => 'POST',
+            'callback'            => [PublishEndpoint::class, 'handle_publish'],
+            'permission_callback' => [HmacAuth::class, 'verify'],
+            'args'                => ['id' => ['sanitize_callback' => 'absint']],
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/posts/(?P<id>\d+)/unpublish', [
+            'methods'             => 'POST',
+            'callback'            => [PublishEndpoint::class, 'handle_unpublish'],
+            'permission_callback' => [HmacAuth::class, 'verify'],
+            'args'                => ['id' => ['sanitize_callback' => 'absint']],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/posts/(?P<id>\d+)/seo', [
             [
                 'methods'             => 'GET',
