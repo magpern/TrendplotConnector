@@ -44,8 +44,10 @@ class SeoEndpoint
         }
 
         return new WP_REST_Response([
-            'id'  => $post_id,
-            'seo' => SeoManager::is_active() ? SeoManager::read($post_id) : null,
+            'id'              => $post_id,
+            'status'          => $result->post_status,
+            'rank_math_active' => SeoManager::is_active(),
+            'seo'             => SeoManager::is_active() ? SeoManager::read($post_id) : null,
         ], 200);
     }
 
@@ -92,9 +94,10 @@ class SeoEndpoint
         }
 
         return new WP_REST_Response([
-            'id'         => $post_id,
-            'seo_status' => $seo_status,
-            'seo'        => SeoManager::is_active() ? SeoManager::read($post_id) : null,
+            'id'               => $post_id,
+            'rank_math_active' => SeoManager::is_active(),
+            'seo_status'       => $seo_status,
+            'seo'              => SeoManager::is_active() ? SeoManager::read($post_id) : null,
         ], 200);
     }
 }

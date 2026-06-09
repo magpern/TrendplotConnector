@@ -163,6 +163,11 @@ class SeoManager
 
     /**
      * Read current Rank Math meta for a post.
+     *
+     * Returns SEO fields plus `score` (integer 0–100 or null if not yet scored).
+     * Note: the per-post analysis breakdown (errors/warnings/passed) is computed
+     * entirely in the Rank Math editor's JavaScript and is never persisted to the
+     * database, so it cannot be read back server-side.
      */
     public static function read(int $post_id): array
     {
@@ -189,6 +194,9 @@ class SeoManager
                 ? array_values(array_filter($unserialized, 'is_string'))
                 : [];
         }
+
+        $score_raw      = get_post_meta($post_id, 'rank_math_seo_score', true);
+        $result['score'] = ($score_raw !== '' && $score_raw !== false) ? (int) $score_raw : null;
 
         return $result;
     }

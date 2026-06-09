@@ -406,7 +406,7 @@ curl -s \
 
 ## 9. Dedicated SEO Endpoint
 
-Use `PATCH /posts/{id}/seo` to update Rank Math SEO metadata on any Trendplot-managed post — including published posts. This is the dedicated path for SEO refreshes that should not touch content, title, Elementor data, or taxonomy.
+Use `PATCH /posts/{id}/seo` to update Rank Math SEO metadata on any Trendplot-managed post — including published posts. Use `GET /posts/{id}/seo` to read the current values. Neither endpoint touches content, title, excerpt, Elementor data, categories, or tags.
 
 ### Allowed posts
 
@@ -418,6 +418,26 @@ Use `PATCH /posts/{id}/seo` to update Rank Math SEO metadata on any Trendplot-ma
 | Post is `draft`, `pending`, `future`, or `publish` | ✅ Allowed |
 
 Unlike `PATCH /drafts/{id}`, published posts are accepted.
+
+### Supported SEO fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `title` | string (max 300) | SEO title tag |
+| `description` | string (max 500) | Meta description |
+| `focus_keyword` | string (max 300) | Primary keyword |
+| `canonical_url` | URL string or `""` | Empty string deletes |
+| `robots` | string array | See robots whitelist in [Section 16](#16-rank-math-seo-integration) |
+| `schema_type` | string | `off`, `Article`, `NewsArticle`, `BlogPosting` |
+
+All fields are optional per request. An explicit empty string deletes the stored value. An explicit empty `robots` array (`[]`) deletes the stored robots directive. Unknown keys return `400 validation_error`.
+
+### Rank Math inactive behavior
+
+When Rank Math is not active (`rank_math_active: false`):
+- `GET /posts/{id}/seo` returns `"seo": null`
+- `PATCH /posts/{id}/seo` returns `"seo_status": "skipped"` — the draft/post is not modified
+- The `rank_math_active` field in every response signals this state to the caller
 
 ### PATCH /posts/{id}/seo
 
@@ -435,8 +455,6 @@ Unlike `PATCH /drafts/{id}`, published posts are accepted.
   }
 }
 ```
-
-All `seo` fields follow the same rules as `POST /drafts`: field-level optional, empty string deletes, empty `robots` array deletes, unknown keys return `400`. See [Section 16](#16-rank-math-seo-integration) for whitelists.
 
 **Bash example:**
 
@@ -474,14 +492,16 @@ curl -s -X PATCH \
 ```json
 {
   "id": 200,
+  "rank_math_active": true,
   "seo_status": "written",
   "seo": {
     "title": "BPC-157 and TB-500 — Updated SEO Title | Example Site",
     "description": "Updated research overview meta description.",
     "focus_keyword": "bpc-157 tb-500",
     "canonical_url": null,
+    "schema_type": "Article",
     "robots": [],
-    "schema_type": "Article"
+    "score": null
   }
 }
 ```
@@ -515,29 +535,42 @@ curl -s \
 ```json
 {
   "id": 200,
+  "status": "publish",
+  "rank_math_active": true,
   "seo": {
     "title": "BPC-157 and TB-500 — Updated SEO Title | Example Site",
     "description": "Updated research overview meta description.",
     "focus_keyword": "bpc-157 tb-500",
     "canonical_url": null,
+    "schema_type": "Article",
     "robots": [],
-    "schema_type": "Article"
+    "score": 72
   }
 }
 ```
 
-`seo` is `null` when Rank Math is not active.
+`seo` is `null` when Rank Math is not active. `score` is `null` when the post has not been opened and saved in the Rank Math editor (score is computed by the editor's JavaScript and persisted only on save).
+
+### Rank Math score and analysis
+
+| Field | Availability |
+|---|---|
+| `seo.score` | ✅ Read from `rank_math_seo_score` post meta (integer 0–100, or `null` if not yet scored) |
+| Analysis breakdown (errors / warnings / passed) | ⛔ Deferred — Rank Math computes the per-post analysis entirely in its editor JavaScript; it is never persisted to the database and cannot be read back server-side without re-implementing the analysis engine |
+
+Trendplot-created posts have `score: null` until the post is opened in the WordPress Rank Math editor and saved. The score is then available on subsequent GET requests.
 
 ### Verification checklist
 
-- [ ] `PATCH /posts/{id}/seo` on a published Trendplot post → `200`, `seo_status: "written"`
-- [ ] Rank Math meta updated in WordPress admin (post edit screen → Rank Math panel)
-- [ ] Post content, title, excerpt, Elementor data unchanged after PATCH
-- [ ] `GET /posts/{id}/seo` returns current Rank Math values
-- [ ] `seo: {"seo_title": "wrong"}` → `400 validation_error`
-- [ ] Non-Trendplot post → `403 not_trendplot_post`
-- [ ] Non-existent post → `404 not_found`
-- [ ] Trashed post → `404 not_found`
+- [x] `PATCH /posts/{id}/seo` on a published Trendplot post → `200`, `seo_status: "written"`, `rank_math_active: true`
+- [x] `GET /posts/{id}/seo` returns `status`, `rank_math_active`, and all SEO fields including `score`
+- [x] Rank Math meta confirmed in DB after PATCH (`rank_math_title`, `rank_math_description`, etc.)
+- [x] Post content, title, excerpt, Elementor data unchanged after PATCH
+- [x] `score` reads back correctly when `rank_math_seo_score` meta is present
+- [x] Non-Trendplot post → `403 not_trendplot_post`
+- [x] Non-existent post → `404 not_found`
+- [x] Trashed post → `404 not_found`
+- [x] Unknown `seo` key → `400 validation_error`
 
 ---
 
