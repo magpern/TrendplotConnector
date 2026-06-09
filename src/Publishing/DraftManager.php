@@ -27,6 +27,7 @@ class DraftManager
         $title   = sanitize_text_field($data['title']);
         $content = wp_kses_post($data['content']);
         $excerpt = wp_strip_all_tags($data['excerpt'] ?? '');
+        $slug    = isset($data['slug']) ? sanitize_title($data['slug']) : '';
 
         $categories = array_map('intval', $data['categories'] ?? []);
         $tags        = array_map('intval', $data['tags'] ?? []);
@@ -86,13 +87,17 @@ class DraftManager
             }
         }
 
-        $post_id = wp_insert_post([
+        $insert_args = [
             'post_title'   => $title,
             'post_content' => $content,
             'post_excerpt' => $excerpt,
             'post_status'  => 'draft',
             'post_type'    => 'post',
-        ], true);
+        ];
+        if ($slug !== '') {
+            $insert_args['post_name'] = $slug;
+        }
+        $post_id = wp_insert_post($insert_args, true);
 
         if (is_wp_error($post_id)) {
             return new WP_Error('creation_failed', $post_id->get_error_message(), ['status' => 500]);
@@ -272,7 +277,7 @@ class DraftManager
         }
 
         // at least one updateable field must be present
-        $has_post_fields = isset($data['title']) || isset($data['content']) || isset($data['excerpt']);
+        $has_post_fields = isset($data['title']) || isset($data['content']) || isset($data['excerpt']) || isset($data['slug']);
         $has_taxonomy    = $categories !== null || $tags !== null;
         $has_meta        = $related_products !== null || $related_articles !== null
             || isset($data['trendplot_source'])
@@ -302,6 +307,9 @@ class DraftManager
         }
         if (isset($data['excerpt'])) {
             $update_args['post_excerpt'] = wp_strip_all_tags($data['excerpt']);
+        }
+        if (isset($data['slug'])) {
+            $update_args['post_name'] = sanitize_title($data['slug']);
         }
 
         if (count($update_args) > 1) {

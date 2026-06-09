@@ -145,6 +145,7 @@ BODY='{
   "title": "Why BPC-157 and TB-500 Are Often Discussed Together",
   "content": "<p>BPC-157 and TB-500 are two peptides...</p>",
   "excerpt": "An overview of why these two peptides are frequently discussed together.",
+  "slug": "bpc-157-tb-500-research-overview",
   "categories": [12, 34],
   "tags": [5, 8],
   "trendplot_article_id": "art_abc123",
@@ -193,6 +194,8 @@ curl -s -X POST \
 
 **Required fields:** `title`, `content`. All other fields are optional.
 
+**`slug`** (optional): Sets `post_name` (the URL slug) via `sanitize_title()`. If omitted, WordPress generates a slug from the title. Two draft posts may share the same slug — WordPress only enforces slug uniqueness at publish time (appending `-2`, `-3`, etc.).
+
 **SEO fields** (`seo` object, optional — requires Rank Math SEO active):
 
 | Field | Type | Constraint | Description |
@@ -229,13 +232,14 @@ Use `PATCH /drafts/{id}` to update an existing Trendplot-created draft. All requ
 | Post is `publish` or `private` | `409 published_post_rejected` |
 | Post is `draft`, `pending`, or `future` | ✅ Allowed |
 
-**Request body** (all fields optional):
+**Request body** (all fields optional; at least one required):
 
 ```json
 {
   "title": "Updated article title",
   "content": "<p>Updated HTML content.</p>",
   "excerpt": "Updated excerpt.",
+  "slug": "updated-article-slug",
   "categories": [12, 34],
   "tags": [5, 8],
   "trendplot_article_id": "art_abc123",
@@ -251,6 +255,10 @@ Use `PATCH /drafts/{id}` to update an existing Trendplot-created draft. All requ
   }
 }
 ```
+
+**`slug`** (optional): Updates `post_name` via `sanitize_title()`. Only applies to `draft`, `pending`, and `future` posts — published posts are rejected entirely by this endpoint. If the slug is already taken by a published post, WordPress appends `-2`, `-3`, etc. at publish time; two drafts may share the same slug without conflict. The updated slug is reflected in the response `slug` field.
+
+**Endpoint scope:** `PATCH /drafts/{id}` is the right endpoint for updating article body, title, excerpt, **and slug**. Use `PATCH /posts/{id}/seo` exclusively for Rank Math SEO field updates on already-published posts — that endpoint never touches content, title, excerpt, or slug.
 
 **SEO field rules for PATCH:** Same fields and validation as `POST /drafts`. Only the fields present in the `seo` object are written — omitted fields are left unchanged. Pass `""` to delete a stored value; pass `[]` to delete stored robots. All validation runs before any WordPress write; on failure the post is left completely unchanged.
 
