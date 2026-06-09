@@ -71,6 +71,25 @@ class Router
             ],
         ]);
 
+        register_rest_route(self::NAMESPACE, '/posts/(?P<id>\d+)/seo', [
+            [
+                'methods'             => 'GET',
+                'callback'            => [SeoEndpoint::class, 'handle_get'],
+                'permission_callback' => [HmacAuth::class, 'verify'],
+                'args'                => [
+                    'id' => ['sanitize_callback' => 'absint'],
+                ],
+            ],
+            [
+                'methods'             => 'PATCH',
+                'callback'            => [SeoEndpoint::class, 'handle_patch'],
+                'permission_callback' => [HmacAuth::class, 'verify'],
+                'args'                => [
+                    'id' => ['sanitize_callback' => 'absint'],
+                ],
+            ],
+        ]);
+
         register_rest_route(self::NAMESPACE, '/posts/(?P<id>\d+)/meta', [
             'methods'             => 'PATCH',
             'callback'            => [MetaEndpoint::class, 'handle'],

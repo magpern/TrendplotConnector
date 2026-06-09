@@ -62,6 +62,8 @@ All routes use namespace `trendplot/v1` under `/wp-json/`.
 | POST | `/drafts` | Required | **Create a draft post** |
 | GET | `/drafts/{id}` | Required | **Retrieve current status of a Trendplot-managed post** |
 | PATCH | `/drafts/{id}` | Required | **Update a Trendplot-created draft** |
+| GET | `/posts/{id}/seo` | Required | **Read current Rank Math SEO values for any Trendplot-managed post** |
+| PATCH | `/posts/{id}/seo` | Required | **Update Rank Math SEO for any Trendplot-managed post (published or draft)** |
 | PATCH | `/posts/{id}/meta` | Required | **Write Trendplot metadata to any post** |
 
 ¹ If no shared secret is configured, `/health` is public. Once a secret is configured, HMAC auth is required.
@@ -402,7 +404,144 @@ curl -s \
 
 ---
 
-## 9. Tagging Existing Content
+## 9. Dedicated SEO Endpoint
+
+Use `PATCH /posts/{id}/seo` to update Rank Math SEO metadata on any Trendplot-managed post — including published posts. This is the dedicated path for SEO refreshes that should not touch content, title, Elementor data, or taxonomy.
+
+### Allowed posts
+
+| Condition | Result |
+|---|---|
+| Post does not exist | `404 not_found` |
+| Post is `trash` | `404 not_found` |
+| Post has no `_trendplot_article_id` | `403 not_trendplot_post` |
+| Post is `draft`, `pending`, `future`, or `publish` | ✅ Allowed |
+
+Unlike `PATCH /drafts/{id}`, published posts are accepted.
+
+### PATCH /posts/{id}/seo
+
+**Request body:**
+
+```json
+{
+  "seo": {
+    "title": "Updated SEO Title | Example Site",
+    "description": "Updated meta description.",
+    "focus_keyword": "bpc-157 tb-500 research",
+    "canonical_url": "https://example.com/bpc-157-tb-500/",
+    "robots": [],
+    "schema_type": "Article"
+  }
+}
+```
+
+All `seo` fields follow the same rules as `POST /drafts`: field-level optional, empty string deletes, empty `robots` array deletes, unknown keys return `400`. See [Section 16](#16-rank-math-seo-integration) for whitelists.
+
+**Bash example:**
+
+```bash
+SITE_ID="YOUR_SITE_ID"
+SECRET="YOUR_SECRET_HERE"
+POST_ID=200
+METHOD="PATCH"
+ENDPOINT="/wp-json/trendplot/v1/posts/${POST_ID}/seo"
+TS=$(date +%s)
+BODY='{
+  "seo": {
+    "title": "BPC-157 and TB-500 — Updated SEO Title | Example Site",
+    "description": "Updated research overview meta description.",
+    "focus_keyword": "bpc-157 tb-500",
+    "robots": [],
+    "schema_type": "Article"
+  }
+}'
+
+SIG=$(printf '%s\n%s\n%s\n%s' "$METHOD" "$ENDPOINT" "$TS" "$BODY" | \
+  openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')
+
+curl -s -X PATCH \
+  -H "Content-Type: application/json" \
+  -H "X-Trendplot-Site-Id: $SITE_ID" \
+  -H "X-Trendplot-Timestamp: $TS" \
+  -H "X-Trendplot-Signature: $SIG" \
+  -d "$BODY" \
+  "https://example.com${ENDPOINT}"
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "id": 200,
+  "seo_status": "written",
+  "seo": {
+    "title": "BPC-157 and TB-500 — Updated SEO Title | Example Site",
+    "description": "Updated research overview meta description.",
+    "focus_keyword": "bpc-157 tb-500",
+    "canonical_url": null,
+    "robots": [],
+    "schema_type": "Article"
+  }
+}
+```
+
+`seo_status` values: `"written"` (Rank Math active, fields written), `"skipped"` (Rank Math inactive), `"none"` (empty `seo: {}`).
+
+### GET /posts/{id}/seo
+
+Returns the current Rank Math SEO values without modifying anything.
+
+**Bash example:**
+
+```bash
+METHOD="GET"
+ENDPOINT="/wp-json/trendplot/v1/posts/${POST_ID}/seo"
+TS=$(date +%s)
+BODY=""
+
+SIG=$(printf '%s\n%s\n%s\n%s' "$METHOD" "$ENDPOINT" "$TS" "$BODY" | \
+  openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')
+
+curl -s \
+  -H "X-Trendplot-Site-Id: $SITE_ID" \
+  -H "X-Trendplot-Timestamp: $TS" \
+  -H "X-Trendplot-Signature: $SIG" \
+  "https://example.com${ENDPOINT}"
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "id": 200,
+  "seo": {
+    "title": "BPC-157 and TB-500 — Updated SEO Title | Example Site",
+    "description": "Updated research overview meta description.",
+    "focus_keyword": "bpc-157 tb-500",
+    "canonical_url": null,
+    "robots": [],
+    "schema_type": "Article"
+  }
+}
+```
+
+`seo` is `null` when Rank Math is not active.
+
+### Verification checklist
+
+- [ ] `PATCH /posts/{id}/seo` on a published Trendplot post → `200`, `seo_status: "written"`
+- [ ] Rank Math meta updated in WordPress admin (post edit screen → Rank Math panel)
+- [ ] Post content, title, excerpt, Elementor data unchanged after PATCH
+- [ ] `GET /posts/{id}/seo` returns current Rank Math values
+- [ ] `seo: {"seo_title": "wrong"}` → `400 validation_error`
+- [ ] Non-Trendplot post → `403 not_trendplot_post`
+- [ ] Non-existent post → `404 not_found`
+- [ ] Trashed post → `404 not_found`
+
+---
+
+## 10. Tagging Existing Content
 
 Use `PATCH /posts/{id}/meta` to attach Trendplot metadata to any existing WordPress post or WooCommerce product:
 
@@ -450,7 +589,7 @@ Only keys in the `_trendplot_*` whitelist are accepted. Unknown keys return `400
 
 ---
 
-## 10. Deployment Workflow
+## 11. Deployment Workflow
 
 ```bash
 # 1. Develop in the git repository
@@ -475,7 +614,7 @@ git push origin main
 
 ---
 
-## 11. WP-CLI Verification
+## 12. WP-CLI Verification
 
 ```bash
 # Activate plugin
@@ -512,7 +651,7 @@ docker compose run --rm wpcli wp post list \
 
 ---
 
-## 12. Metadata Namespace
+## 13. Metadata Namespace
 
 All Trendplot metadata uses the `_trendplot_` prefix. The leading underscore marks them as private (hidden from the default WordPress Custom Fields UI).
 
@@ -529,7 +668,7 @@ The connector enforces a hardcoded whitelist (`MetaStore::ALLOWED_KEYS`). Any wr
 
 ---
 
-## 13. Related Research Articles Block
+## 14. Related Research Articles Block
 
 When a WooCommerce product has Trendplot articles linked to it, the plugin automatically renders a **Related Research Articles** section on that product's front-end page.
 
@@ -645,7 +784,7 @@ curl -sk "https://example.com/product/<slug>/" | grep -A 10 'trendplot-related-a
 
 ---
 
-## 14. Trendplot Content Admin Screen
+## 15. Trendplot Content Admin Screen
 
 The **Trendplot → Content** screen gives WordPress administrators a read-only view of all posts created or managed by Trendplot. It is the primary tool for monitoring sync status, debugging relationships, and tracking which drafts have been published.
 
@@ -745,7 +884,7 @@ docker compose run --rm wpcli wp post list \
 
 ---
 
-## 15. Rank Math SEO Integration
+## 16. Rank Math SEO Integration
 
 The connector writes Rank Math SEO metadata as part of `POST /drafts` and `PATCH /drafts/{id}`. Rank Math SEO (v1.0.x+) must be installed and active. If absent, the `seo` block is silently ignored and the response includes `"seo_status": "skipped"`.
 
@@ -822,7 +961,7 @@ docker compose run --rm wpcli wp post list \
 
 ---
 
-## 16. Phase 2 Preview
+## 17. Phase 2 Preview
 
 The following capabilities are designed and ready to implement in Phase 2:
 
