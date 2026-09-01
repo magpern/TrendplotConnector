@@ -4,7 +4,7 @@ Tags: trendplot, content, seo, rank math, rest api
 Requires at least: 6.5
 Tested up to: 6.7
 Requires PHP: 8.1
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -40,10 +40,16 @@ The plugin removes only its own settings option on uninstall. Trendplot-created 
 
 == Changelog ==
 
+= 1.0.1 =
+* Automatic updates from a private update server (bundled Plugin Update Checker v5); base URL read from the PRIVATE_UPDATE_SERVER constant.
+
 = 1.0.0 =
 * Initial release. Full REST API, admin Content page, Rank Math SEO integration, publishing workflow, IndexNow instant indexing trigger. See CHANGELOG.md.
 
 == Upgrade Notice ==
+
+= 1.0.1 =
+Adds self-updates from the private update server.
 
 = 1.0.0 =
 Initial release.

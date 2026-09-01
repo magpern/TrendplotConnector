@@ -4,6 +4,18 @@
 
 _No pending changes._
 
+## [1.0.1] - 2026-09-02
+
+### Added
+
+- Automatic updates from a private update server via the bundled
+  [Plugin Update Checker](https://github.com/YahnisElsts/plugin-update-checker) v5
+  library (`lib/plugin-update-checker/`). The server base URL is read from the
+  `PRIVATE_UPDATE_SERVER` constant (define it in `wp-config.php`); when it is not
+  defined the plugin does not check for updates.
+- CI workflow that uploads the release package to the update server on each
+  release tag.
+
 ## [1.0.0] - 2026-06-09
 
 Initial release of Trendplot Connector.
